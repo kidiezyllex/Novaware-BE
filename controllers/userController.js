@@ -1,5 +1,6 @@
 import User from "../models/userModel.js";
 import Product  from "../models/productModel.js";
+import Order from "../models/orderModel.js";
 import asyncHandler from "express-async-handler";
 import generateToken from "../utils/generateToken.js";
 import sendEmail from "../utils/sendEmail.js";
@@ -310,6 +311,57 @@ const getFavorites = asyncHandler(async (req, res) => {
   }
 });
 
+// Check if user has purchase history
+const checkHasPurchaseHistory = asyncHandler(async (req, res) => {
+  const userId = req.params.userId;
+  
+  const orderCount = await Order.countDocuments({ 
+    user: userId,
+    isPaid: true 
+  });
+
+  const hasPurchaseHistory = orderCount > 0;
+
+  sendSuccess(res, 200, "Purchase history checked successfully", {
+    hasPurchaseHistory,
+    orderCount
+  });
+});
+
+// Check if user has gender
+const checkHasGender = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId).select("gender");
+
+  if (!user) {
+    sendNotFound(res, "User not found");
+    return;
+  }
+
+  const hasGender = !!user.gender;
+
+  sendSuccess(res, 200, "Gender check completed successfully", {
+    hasGender,
+    gender: user.gender || null
+  });
+});
+
+// Check if user has preferences.style
+const checkHasStylePreference = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.userId).select("preferences");
+
+  if (!user) {
+    sendNotFound(res, "User not found");
+    return;
+  }
+
+  const hasStylePreference = !!(user.preferences && user.preferences.style);
+
+  sendSuccess(res, 200, "Style preference check completed successfully", {
+    hasStylePreference,
+    style: user.preferences?.style || null
+  });
+});
+
 export {
   authUser,
   getUserProfile,
@@ -325,4 +377,7 @@ export {
   addToFavorites,
   removeFromFavorites,
   getFavorites,
+  checkHasPurchaseHistory,
+  checkHasGender,
+  checkHasStylePreference,
 };

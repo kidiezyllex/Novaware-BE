@@ -93,6 +93,7 @@ const userSchema = mongoose.Schema(
       },
       interactionType: {
         type: String,
+        // xem, thích, mua, giỏ hàng, review
         enum: ['view', 'like', 'purchase', 'cart', 'review'],
         required: true,
       },

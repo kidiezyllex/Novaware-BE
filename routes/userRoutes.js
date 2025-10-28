@@ -13,7 +13,10 @@ import {
   resetPassword,
   addToFavorites,
   removeFromFavorites,
-  getFavorites
+  getFavorites,
+  checkHasPurchaseHistory,
+  checkHasGender,
+  checkHasStylePreference
 } from '../controllers/userController.js';
 import { protect, checkAdmin, protectResetPassword, } from '../middlewares/authMiddleware.js';
 import passport from 'passport';
@@ -196,6 +199,136 @@ router.put('/reset-password', protectResetPassword, resetPassword);
 router.route('/:userId/favorites').post(protect, addToFavorites); 
 router.route('/:userId/favorites/:productId').delete(protect, removeFromFavorites); 
 router.route('/:userId/favorites').get(protect, getFavorites); 
+
+/**
+ * @swagger
+ * /users/{userId}/check/purchase-history:
+ *   get:
+ *     summary: Check if user has purchase history
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: Purchase history check completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     hasPurchaseHistory:
+ *                       type: boolean
+ *                       description: Whether user has purchase history
+ *                     orderCount:
+ *                       type: number
+ *                       description: Total number of paid orders
+ *       401:
+ *         description: Unauthorized
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: User not found
+ */
+router.route('/:userId/check/purchase-history').get(protect, checkHasPurchaseHistory);
+
+/**
+ * @swagger
+ * /users/{userId}/check/gender:
+ *   get:
+ *     summary: Check if user has gender information
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: Gender check completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     hasGender:
+ *                       type: boolean
+ *                       description: Whether user has gender information
+ *                     gender:
+ *                       type: string
+ *                       nullable: true
+ *                       enum: [male, female, other]
+ *                       description: User gender if available
+ *       401:
+ *         description: Unauthorized
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: User not found
+ */
+router.route('/:userId/check/gender').get(protect, checkHasGender);
+
+/**
+ * @swagger
+ * /users/{userId}/check/style-preference:
+ *   get:
+ *     summary: Check if user has style preference
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: Style preference check completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     hasStylePreference:
+ *                       type: boolean
+ *                       description: Whether user has style preference
+ *                     style:
+ *                       type: string
+ *                       nullable: true
+ *                       enum: [casual, formal, sport, vintage, modern, bohemian]
+ *                       description: User style preference if available
+ *       401:
+ *         description: Unauthorized
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: User not found
+ */
+router.route('/:userId/check/style-preference').get(protect, checkHasStylePreference);
 
 router
   .route('/profile')

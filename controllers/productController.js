@@ -3,6 +3,7 @@ import User from "../models/userModel.js";
 import asyncHandler from "express-async-handler";
 import recommendSize from "../utils/sizeRecommendation.js";
 import mongoose from "mongoose";
+import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../utils/responseHelper.js";
 
 // Hàm tính tổng countInStock (dùng chung cho cả client và server)
 function calculateTotalCountInStock(size) {
@@ -18,39 +19,60 @@ function calculateTotalCountInStock(size) {
 }
 
 const getProducts = asyncHandler(async (req, res) => {
-  if (req.query.option === "all") {
-    const products = await Product.find({});
-    res.json({ products });
-  } else {
-    const perPage = 12;
-    const page = parseInt(req.query.pageNumber) || 1;
+  try {
+    // Check if database is connected
+    if (mongoose.connection.readyState !== 1) {
+      return sendError(res, 503, 'Database not connected', {
+        error: 'Please wait for database connection to be established'
+      });
+    }
 
-    const keyword = req.query.keyword
-      ? {
-          name: {
-            $regex: req.query.keyword,
-            $options: "i",
-          },
-        }
-      : {};
+    if (req.query.option === "all") {
+      const products = await Product.find({}).maxTimeMS(30000);
+      sendSuccess(res, 200, "All products retrieved successfully", { products });
+    } else {
+      const perPage = parseInt(req.query.pageSize) || 12;
+      const page = parseInt(req.query.pageNumber) || 1;
 
-    const count = await Product.countDocuments({ ...keyword });
-    const products = await Product.find({ ...keyword })
-      .limit(perPage)
-      .skip(perPage * (page - 1));
+      const keyword = req.query.keyword
+        ? {
+            name: {
+              $regex: req.query.keyword,
+              $options: "i",
+            },
+          }
+        : {};
 
-    res.json({ products, page, pages: Math.ceil(count / perPage), count });
+      // Use Promise.all to run count and find operations in parallel with timeout
+      const [count, products] = await Promise.all([
+        Product.countDocuments({ ...keyword }).maxTimeMS(30000),
+        Product.find({ ...keyword })
+          .limit(perPage)
+          .skip(perPage * (page - 1))
+          .maxTimeMS(30000)
+      ]);
+
+      sendSuccess(res, 200, "Products retrieved successfully", { 
+        products, 
+        page, 
+        pages: Math.ceil(count / perPage), 
+        count 
+      });
+    }
+  } catch (error) {
+    console.error('Error in getProducts:', error);
+    sendError(res, 500, 'Database operation timed out or failed', {
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
 });
 
 const getProductById = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id);
   if (product) {
-    res.json(product);
+    sendSuccess(res, 200, "Product retrieved successfully", { product });
   } else {
-    res.status(404).json({
-      message: "Product not found",
-    });
+    sendNotFound(res, "Product not found");
   }
 });
 
@@ -59,10 +81,9 @@ const deleteProduct = asyncHandler(async (req, res) => {
 
   if (product) {
     await product.remove();
-    res.json({ message: "Product removed" });
+    sendSuccess(res, 200, "Product removed successfully");
   } else {
-    res.status(404);
-    throw new Error("Product not found");
+    sendNotFound(res, "Product not found");
   }
 });
 
@@ -98,7 +119,7 @@ const createProduct = asyncHandler(async (req, res) => {
   });
 
   const createdProduct = await product.save();
-  res.status(201).json(createdProduct);
+  sendSuccess(res, 201, "Product created successfully", { product: createdProduct });
 });
 
 const updateProduct = asyncHandler(async (req, res) => {
@@ -133,10 +154,9 @@ const updateProduct = asyncHandler(async (req, res) => {
     product.colors = colors || product.colors;
 
     const updatedProduct = await product.save();
-    res.json(updatedProduct);
+    sendSuccess(res, 200, "Product updated successfully", { product: updatedProduct });
   } else {
-    res.status(404);
-    throw new Error("Product not found");
+    sendNotFound(res, "Product not found");
   }
 });
 
@@ -151,8 +171,8 @@ const createProductReview = asyncHandler(async (req, res) => {
     );
 
     if (alreadyReviewed) {
-      res.status(400);
-      throw new Error("Product already reviewed");
+      sendValidationError(res, "Product already reviewed");
+      return;
     }
 
     const review = {
@@ -171,10 +191,9 @@ const createProductReview = asyncHandler(async (req, res) => {
       product.reviews.length;
 
     await product.save();
-    res.status(201).json({ message: "Review added" });
+    sendSuccess(res, 201, "Review added successfully");
   } else {
-    res.status(404);
-    throw new Error("Product not found");
+    sendNotFound(res, "Product not found");
   }
 });
 
@@ -187,7 +206,7 @@ const getTopProducts = asyncHandler(async (req, res) => {
     .limit(perPage)
     .skip(perPage * (page - 1));
 
-  res.json({ page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Top products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
 
 const getLatestProducts = asyncHandler(async (req, res) => {
@@ -200,7 +219,7 @@ const getLatestProducts = asyncHandler(async (req, res) => {
     .limit(perPage)
     .skip(perPage * (page - 1));
 
-  res.json({ page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Latest products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
 
 const getSaleProducts = asyncHandler(async (req, res) => {
@@ -213,7 +232,7 @@ const getSaleProducts = asyncHandler(async (req, res) => {
     .limit(perPage)
     .skip(perPage * (page - 1));
 
-  res.json({ page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Sale products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
 
 const getRelatedProducts = asyncHandler(async (req, res) => {
@@ -230,8 +249,8 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
     .sort({ rating: -1 })
     .limit(4);
 
-  res.set("Cache-Control", "no-store"); // ✅ Thêm dòng này
-  res.json({ products });
+  res.set("Cache-Control", "no-store"); 
+  sendSuccess(res, 200, "Related products retrieved successfully", { products });
 });
 
 const getSortByPriceProducts = asyncHandler(async (req, res) => {
@@ -270,7 +289,7 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
     { $limit: perPage },
   ]);
 
-  res.json({ page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Products sorted by price retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
 
 const recommendSizeForUser = asyncHandler(async (req, res) => {
@@ -279,25 +298,25 @@ const recommendSizeForUser = asyncHandler(async (req, res) => {
   const user = await User.findById(userId);
 
   if (!user) {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
+    return;
   }
 
   const { gender, height, weight } = user;
 
   if (!gender || !height || !weight) {
-    res.status(400);
-    throw new Error("Incomplete user profile for size recommendation");
+    sendValidationError(res, "Incomplete user profile for size recommendation");
+    return;
   }
 
   const recommendedSize = recommendSize(gender, height, weight);
 
   if (!recommendedSize) {
-    res.status(404);
-    throw new Error("No size recommendation found for the given parameters");
+    sendNotFound(res, "No size recommendation found for the given parameters");
+    return;
   }
 
-  res.status(200).json({ recommendedSize });
+  sendSuccess(res, 200, "Size recommendation retrieved successfully", { recommendedSize });
 });
 
 const filterProducts = asyncHandler(async (req, res) => {
@@ -397,7 +416,7 @@ const filterProducts = asyncHandler(async (req, res) => {
 
   const totalCount = countQuery.length > 0 ? countQuery[0].count : 0;
 
-  res.json({
+  sendSuccess(res, 200, "Filtered products retrieved successfully", {
     products,
     page,
     pages: Math.ceil(totalCount / perPage),

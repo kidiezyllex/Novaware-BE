@@ -5,25 +5,26 @@ import generateToken from "../utils/generateToken.js";
 import sendEmail from "../utils/sendEmail.js";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { sendSuccess, sendError, sendValidationError, sendNotFound, sendUnauthorized, sendCreated } from "../utils/responseHelper.js";
 
 const authUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const user = await User.findOne({ email });
 
   if (user && (await user.matchPassword(password))) {
-    res.json({
+    const userData = {
       _id: user._id,
       name: user.name,
       email: user.email,
       isAdmin: user.isAdmin,
       token: generateToken(user._id),
-    });
+    };
+    sendSuccess(res, 200, "Login successful", userData);
   } else {
-    res.status(401);
     if (!user) {
-      throw new Error("Invalid email");
+      sendUnauthorized(res, "Invalid email");
     } else {
-      throw new Error("Invalid password");
+      sendUnauthorized(res, "Invalid password");
     }
   }
 });
@@ -32,7 +33,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
 
   if (user) {
-    res.json({
+    const userData = {
       _id: user._id,
       name: user.name,
       email: user.email,
@@ -40,10 +41,10 @@ const getUserProfile = asyncHandler(async (req, res) => {
       weight: user.weight,
       gender: user.gender,
       isAdmin: user.isAdmin,
-    });
+    };
+    sendSuccess(res, 200, "User profile retrieved successfully", userData);
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
@@ -52,8 +53,8 @@ const registerUser = asyncHandler(async (req, res) => {
   const userExist = await User.findOne({ email });
 
   if (userExist) {
-    res.status(400);
-    throw new Error("User already existed");
+    sendValidationError(res, "User already existed");
+    return;
   }
 
   const user = await User.create({
@@ -63,15 +64,15 @@ const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    res.status(201).json({
+    const userData = {
       _id: user._id,
       name: user.name,
       email: user.email,
       isAdmin: user.isAdmin,
-    });
+    };
+    sendCreated(res, "User registered successfully", userData);
   } else {
-    res.status(400);
-    throw new Error("Invalid user data");
+    sendValidationError(res, "Invalid user data");
   }
 });
 
@@ -92,7 +93,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 
     const updatedUser = await user.save();
 
-    res.json({
+    const userData = {
       _id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
@@ -101,17 +102,17 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       gender: updatedUser.gender,
       isAdmin: updatedUser.isAdmin,
       token: generateToken(updatedUser._id),
-    });
+    };
+    sendSuccess(res, 200, "User profile updated successfully", userData);
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
 
 const getUsers = asyncHandler(async (req, res) => {
   const users = await User.find({});
-  res.json(users);
+  sendSuccess(res, 200, "Users retrieved successfully", { users });
 });
 
 const deleteUser = asyncHandler(async (req, res) => {
@@ -119,10 +120,9 @@ const deleteUser = asyncHandler(async (req, res) => {
 
   if (user) {
     await user.remove();
-    res.json({ message: "User removed" });
+    sendSuccess(res, 200, "User removed successfully");
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
@@ -130,10 +130,9 @@ const getUserById = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id).select("-password");
 
   if (user) {
-    res.json(user);
+    sendSuccess(res, 200, "User retrieved successfully", { user });
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
@@ -147,15 +146,15 @@ const updateUser = asyncHandler(async (req, res) => {
     user.isAdmin = isAdmin;
 
     const updatedUser = await user.save();
-    res.json({
+    const userData = {
       _id: updatedUser._id,
       name: updatedUser.name,
       email: updatedUser.email,
       isAdmin: updatedUser.isAdmin,
-    });
+    };
+    sendSuccess(res, 200, "User updated successfully", { user: userData });
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
@@ -164,8 +163,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    res.status(404);
-    throw new Error("User not found with this email");
+    sendNotFound(res, "User not found with this email");
+    return;
   }
 
   const verificationCode = Math.floor(
@@ -186,10 +185,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
       message,
     });
 
-    res.status(200).json({
-      success: true,
-      message: `Email sent to ${user.email} with verification code`,
-    });
+    sendSuccess(res, 200, `Email sent to ${user.email} with verification code`);
   } catch (error) {
     console.error(error);
     user.resetPasswordToken = undefined;
@@ -197,8 +193,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
     await user.save({ validateBeforeSave: false });
 
-    res.status(500);
-    throw new Error("Email could not be sent");
+    sendError(res, 500, "Email could not be sent");
   }
 });
 
@@ -208,8 +203,8 @@ const verifyCode = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    res.status(404);
-    throw new Error("User not found with this email");
+    sendNotFound(res, "User not found with this email");
+    return;
   }
 
   if (
@@ -235,14 +230,9 @@ const verifyCode = asyncHandler(async (req, res) => {
 
     await user.save({ validateBeforeSave: false });
 
-    res.status(200).json({
-      success: true,
-      message: "Verification successful",
-      resetToken: resetToken,
-    });
+    sendSuccess(res, 200, "Verification successful", { resetToken });
   } else {
-    res.status(400);
-    throw new Error("Invalid or expired code");
+    sendValidationError(res, "Invalid or expired code");
   }
 });
 
@@ -251,8 +241,8 @@ const resetPassword = asyncHandler(async (req, res) => {
   const password = req.body.password;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401);
-    throw new Error("Not authorized, no token provided");
+    sendUnauthorized(res, "Not authorized, no token provided");
+    return;
   }
   const token = authHeader.split(" ")[1];
   const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
@@ -263,8 +253,8 @@ const resetPassword = asyncHandler(async (req, res) => {
   });
 
   if (!user) {
-    res.status(400);
-    throw new Error("Invalid token or token has expired");
+    sendValidationError(res, "Invalid token or token has expired");
+    return;
   }
 
   user.password = password;
@@ -273,10 +263,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
   await user.save();
 
-  res.status(200).json({
-    success: true,
-    message: "Password updated successfully",
-  });
+  sendSuccess(res, 200, "Password updated successfully");
 });
 
 const addToFavorites = asyncHandler(async (req, res) => {
@@ -288,14 +275,12 @@ const addToFavorites = asyncHandler(async (req, res) => {
     if (!user.favorites.includes(productId)) {
       user.favorites.push(productId);
       await user.save();
-      res.status(201).json({ message: "Product added to favorites" });
+      sendCreated(res, "Product added to favorites");
     } else {
-      res.status(400);
-      throw new Error("Product already in favorites");
+      sendValidationError(res, "Product already in favorites");
     }
   } else {
-    res.status(404);
-    throw new Error("User or product not found");
+    sendNotFound(res, "User or product not found");
   }
 });
 const removeFromFavorites = asyncHandler(async (req, res) => {
@@ -306,14 +291,12 @@ const removeFromFavorites = asyncHandler(async (req, res) => {
     if (index > -1) {
       user.favorites.splice(index, 1);
       await user.save();
-      res.json({ message: "Product removed from favorites" });
+      sendSuccess(res, 200, "Product removed from favorites");
     } else {
-      res.status(404);
-      throw new Error("Product not found in favorites");
+      sendNotFound(res, "Product not found in favorites");
     }
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 
@@ -321,10 +304,9 @@ const getFavorites = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.userId).populate("favorites");
 
   if (user) {
-    res.json(user.favorites);
+    sendSuccess(res, 200, "Favorites retrieved successfully", { favorites: user.favorites });
   } else {
-    res.status(404);
-    throw new Error("User not found");
+    sendNotFound(res, "User not found");
   }
 });
 

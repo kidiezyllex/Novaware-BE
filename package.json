@@ -45,7 +45,9 @@
     "passport-twitter": "^1.0.4",
     "sharp": "^0.34.4",
     "socket.io": "^4.8.1",
-    "stripe": "^17.4.0"
+    "stripe": "^17.4.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "concurrently": "^6.1.0",

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import asyncHandler from "express-async-handler";
 import Product from "../models/productModel.js";
 import Order from "../models/orderModel.js";
+import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../utils/responseHelper.js";
 
 const addOrderItems = asyncHandler(async (req, res) => {
   const {
@@ -15,8 +16,8 @@ const addOrderItems = asyncHandler(async (req, res) => {
   } = req.body;
 
   if (orderItems && orderItems.length === 0) {
-    res.status(400);
-    throw new Error("No order items");
+    sendValidationError(res, "No order items");
+    return;
   } else {
     // Chỉ kiểm tra tồn kho, không trừ số lượng
     for (const item of orderItems) {
@@ -84,7 +85,7 @@ const addOrderItems = asyncHandler(async (req, res) => {
     });
 
     const createdOrder = await order.save();
-    res.status(201).json(createdOrder);
+    sendSuccess(res, 201, "Order created successfully", { order: createdOrder });
   }
 });
 
@@ -287,17 +288,13 @@ const confirmOrder = asyncHandler(async (req, res) => {
       await Promise.all(updateProductPromises);
       order.isProcessing = true;
       const updatedOrder = await order.save();
-      res.json(updatedOrder);
+      sendSuccess(res, 200, "Order confirmed successfully", { order: updatedOrder });
     } catch (error) {
       console.error("Error updating products:", error);
-      res.status(500).json({
-        message: "Error updating products",
-        error: error.message,
-      });
+      sendError(res, 500, "Error updating products", { error: error.message });
     }
   } else {
-    res.status(404);
-    throw new Error("Order not found");
+    sendNotFound(res, "Order not found");
   }
 });
 
@@ -308,10 +305,9 @@ const getOrderById = asyncHandler(async (req, res) => {
   );
 
   if (order) {
-    res.status(200).json(order);
+    sendSuccess(res, 200, "Order retrieved successfully", { order });
   } else {
-    res.status(404);
-    throw new Error("Order not found!");
+    sendNotFound(res, "Order not found!");
   }
 });
 
@@ -330,16 +326,15 @@ const updateOrderToPaid = asyncHandler(async (req, res) => {
 
     const updatedOrder = await order.save();
 
-    res.json(updatedOrder);
+    sendSuccess(res, 200, "Order payment updated successfully", { order: updatedOrder });
   } else {
-    res.status(404);
-    throw new Error("Order not found");
+    sendNotFound(res, "Order not found");
   }
 });
 
 const getMyOrders = asyncHandler(async (req, res) => {
   const orders = await Order.find({ user: req.user._id });
-  res.json(orders);
+  sendSuccess(res, 200, "User orders retrieved successfully", { orders });
 });
 
 const getOrders = asyncHandler(async (req, res) => {
@@ -360,7 +355,7 @@ const getOrders = asyncHandler(async (req, res) => {
   const orders = await Order.find({ ...keyword })
     .populate("user", "id name")
     .sort({ createdAt: -1 });
-  res.json(orders);
+  sendSuccess(res, 200, "Orders retrieved successfully", { orders });
 });
 
 const updateOrderToDelivered = asyncHandler(async (req, res) => {
@@ -372,10 +367,9 @@ const updateOrderToDelivered = asyncHandler(async (req, res) => {
 
     const updatedOrder = await order.save();
 
-    res.json(updatedOrder);
+    sendSuccess(res, 200, "Order delivery updated successfully", { order: updatedOrder });
   } else {
-    res.status(404);
-    throw new Error("Order not found");
+    sendNotFound(res, "Order not found");
   }
 });
 
@@ -383,22 +377,20 @@ const cancelOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
 
   if (!order) {
-    res.status(404);
-    throw new Error("Order not found");
+    sendNotFound(res, "Order not found");
+    return;
   }
 
   if (!order.isProcessing) {
-    res.status(400);
-    throw new Error(
-      "Order cannot be cancelled because it is not in Processing mode"
-    );
+    sendValidationError(res, "Order cannot be cancelled because it is not in Processing mode");
+    return;
   }
 
   order.isCancelled = true;
   order.isProcessing = false;
   const updatedOrder = await order.save();
 
-  res.json(updatedOrder);
+  sendSuccess(res, 200, "Order cancelled successfully", { order: updatedOrder });
 });
 
 export {

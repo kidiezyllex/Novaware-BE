@@ -1,4 +1,5 @@
 import Brand from "../models/brandModel.js";
+import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../utils/responseHelper.js";
 
 // @desc    Get all brands
 // @route   GET /api/brands
@@ -6,9 +7,9 @@ import Brand from "../models/brandModel.js";
 export const getBrands = async (req, res) => {
   try {
     const brands = await Brand.find({});
-    res.json(brands);
+    sendSuccess(res, 200, "Brands retrieved successfully", { brands });
   } catch (error) {
-    res.status(500).json({ message: "Unable to fetch brands" });
+    sendError(res, 500, "Unable to fetch brands");
   }
 };
 
@@ -17,19 +18,19 @@ export const createBrand = async (req, res) => {
     const { name } = req.body;
 
     if (!name) {
-      return res.status(400).json({ message: "Brand name is required" });
+      return sendValidationError(res, "Brand name is required");
     }
     const brandExists = await Brand.findOne({ name });
     if (brandExists) {
-      return res.status(400).json({ message: "Brand already exists" });
+      return sendValidationError(res, "Brand already exists");
     }
 
     const brand = new Brand({ name });
     const createdBrand = await brand.save();
-    res.status(201).json(createdBrand);
+    sendSuccess(res, 201, "Brand created successfully", { brand: createdBrand });
   } catch (error) {
     console.error("Error creating brand:", error);
-    res.status(500).json({ message: "Unable to create brand" });
+    sendError(res, 500, "Unable to create brand");
   }
 };
 
@@ -43,12 +44,12 @@ export const updateBrand = async (req, res) => {
     if (brand) {
       brand.name = req.body.name || brand.name;
       const updatedBrand = await brand.save();
-      res.json(updatedBrand);
+      sendSuccess(res, 200, "Brand updated successfully", { brand: updatedBrand });
     } else {
-      res.status(404).json({ message: "Brand not found" });
+      sendNotFound(res, "Brand not found");
     }
   } catch (error) {
-    res.status(500).json({ message: "Unable to update brand" });
+    sendError(res, 500, "Unable to update brand");
   }
 };
 
@@ -61,11 +62,11 @@ export const deleteBrand = async (req, res) => {
 
     if (brand) {
       await brand.remove();
-      res.json({ message: "Brand removed" });
+      sendSuccess(res, 200, "Brand removed successfully");
     } else {
-      res.status(404).json({ message: "Brand not found" });
+      sendNotFound(res, "Brand not found");
     }
   } catch (error) {
-    res.status(500).json({ message: "Unable to delete brand" });
+    sendError(res, 500, "Unable to delete brand");
   }
 };

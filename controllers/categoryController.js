@@ -1,13 +1,14 @@
 import Category from "../models/categoryModel.js";
 import asyncHandler from "express-async-handler";
 import Product from "../models/productModel.js";
+import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../utils/responseHelper.js";
 
 // @desc    Get all categories
 // @route   GET /api/categories
 // @access  Public
 const getCategories = asyncHandler(async (req, res) => {
   const categories = await Category.find({});
-  res.json(categories);
+  sendSuccess(res, 200, "Categories retrieved successfully", { categories });
 });
 
 const getCategoryCounts = asyncHandler(async (req, res) => {
@@ -22,22 +23,22 @@ const getCategoryCounts = asyncHandler(async (req, res) => {
     });
   }
 
-  res.json(categoryCounts);
+  sendSuccess(res, 200, "Category counts retrieved successfully", { categoryCounts });
 });
 
 const createCategory = asyncHandler(async (req, res) => {
   const { name } = req.body;
 
   if (!name) {
-    res.status(400);
-    throw new Error("Category name is required");
+    sendValidationError(res, "Category name is required");
+    return;
   }
 
   const categoryExists = await Category.findOne({ name });
 
   if (categoryExists) {
-    res.status(400);
-    throw new Error("Category already exists");
+    sendValidationError(res, "Category already exists");
+    return;
   }
 
   const category = await Category.create({
@@ -45,10 +46,9 @@ const createCategory = asyncHandler(async (req, res) => {
   });
 
   if (category) {
-    res.status(201).json(category);
+    sendSuccess(res, 201, "Category created successfully", { category });
   } else {
-    res.status(400);
-    throw new Error("Invalid category data");
+    sendValidationError(res, "Invalid category data");
   }
 });
 
@@ -64,10 +64,9 @@ const updateCategory = asyncHandler(async (req, res) => {
     category.name = name || category.name;
 
     const updatedCategory = await category.save();
-    res.json(updatedCategory);
+    sendSuccess(res, 200, "Category updated successfully", { category: updatedCategory });
   } else {
-    res.status(404);
-    throw new Error("Category not found");
+    sendNotFound(res, "Category not found");
   }
 });
 
@@ -79,10 +78,9 @@ const deleteCategory = asyncHandler(async (req, res) => {
 
   if (category) {
     await category.remove();
-    res.json({ message: "Category removed" });
+    sendSuccess(res, 200, "Category removed successfully");
   } else {
-    res.status(404);
-    throw new Error("Category not found");
+    sendNotFound(res, "Category not found");
   }
 });
 

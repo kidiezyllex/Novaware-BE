@@ -1,5 +1,6 @@
 import Chat from '../models/chatModel.js';
 import asyncHandler from 'express-async-handler';
+import { sendSuccess, sendError, sendUnauthorized } from '../utils/responseHelper.js';
 
 // @desc    Lấy tất cả tin nhắn của một người dùng
 // @route   GET /api/chats/:userId
@@ -10,13 +11,12 @@ export const getUserChat = asyncHandler(async (req, res) => {
   if (req.user.isAdmin || req.user._id.toString() === userId) {
     const chat = await Chat.findOne({ user: userId }).populate('user', 'name email');
     if (chat) {
-      res.json(chat);
+      sendSuccess(res, 200, "Chat retrieved successfully", { chat });
     } else {
-      res.status(200).json({ messages: [] }); // Trả về mảng rỗng nếu không có chat
+      sendSuccess(res, 200, "No chat found", { messages: [] }); // Trả về mảng rỗng nếu không có chat
     }
   } else {
-    res.status(401);
-    throw new Error('Not authorized to view this chat');
+    sendUnauthorized(res, 'Not authorized to view this chat');
   }
 });
 
@@ -46,10 +46,9 @@ export const sendMessage = asyncHandler(async (req, res) => {
     chat.messages.push(newMessage);
     await chat.save();
 
-    res.status(201).json(newMessage);
+    sendSuccess(res, 201, "Message sent successfully", { message: newMessage });
   } else {
-    res.status(401);
-    throw new Error('Not authorized to send a message in this chat');
+    sendUnauthorized(res, 'Not authorized to send a message in this chat');
   }
 });
 
@@ -60,13 +59,11 @@ export const getAllChats = asyncHandler(async (req, res) => {
   if (req.user.isAdmin) {
     try {
       const chats = await Chat.find({}).populate('user', 'name email');
-      res.json(chats);
+      sendSuccess(res, 200, "All chats retrieved successfully", { chats });
     } catch (error) {
-      res.status(500);
-      throw new Error('Server error while fetching all chats');
+      sendError(res, 500, 'Server error while fetching all chats');
     }
   } else {
-    res.status(401);
-    throw new Error('Not authorized to view all chats');
+    sendUnauthorized(res, 'Not authorized to view all chats');
   }
 });

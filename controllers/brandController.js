@@ -12,12 +12,8 @@ export const getBrands = async (req, res) => {
   }
 };
 
-// @desc    Create a new brand
-// @route   POST /api/brands
-// @access  Private/Admin
 export const createBrand = async (req, res) => {
   try {
-    console.log("Create brand request received:", req.body);
     const { name } = req.body;
 
     if (!name) {

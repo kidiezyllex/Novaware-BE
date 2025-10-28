@@ -1,4 +1,3 @@
-// config/chatbot.js
 import { marked } from "marked";
 import pkg from "node-wit";
 const { Wit } = pkg;
@@ -13,7 +12,6 @@ const WIT_AI_SERVER_ACCESS_TOKEN = process.env.WIT_AI_SERVER_ACCESS_TOKEN;
 const client = new Wit({ accessToken: WIT_AI_SERVER_ACCESS_TOKEN });
 let conversationContext = {};
 
-// cac ham truy xuat du lieu
 async function getProductInfo(productName) {
   try {
     const product = await Product.findOne({
@@ -21,7 +19,6 @@ async function getProductInfo(productName) {
     });
     return product || null;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -38,7 +35,6 @@ async function getProductPrice(productName) {
     }
     return null;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -49,7 +45,6 @@ async function getProductsByCategory(category) {
     });
     return products;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -60,7 +55,6 @@ async function getProductsByBrand(brand) {
     });
     return products;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -71,7 +65,6 @@ async function getProductAvailability(productName) {
     });
     return product ? product.countInStock > 0 : false;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -87,12 +80,11 @@ async function getProductsByColor(productName, color) {
         (c) => c.name.toLowerCase() === color.toLowerCase()
       );
       if (colorInfo && colorInfo.countInStock > 0) {
-        return product; // Trả về sản phẩm nếu tìm thấy màu và còn hàng
+        return product;
       }
     }
-    return null; // Không tìm thấy sản phẩm, màu sắc, hoặc hết hàng
+    return null;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -103,9 +95,8 @@ async function getProductsBySize(productName, size) {
       [`size.${size}`]: { $exists: true, $ne: 0 },
     });
 
-    return product; // Trả về sản phẩm nếu tìm thấy và size đó có số lượng tồn kho > 0
+    return product;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -114,7 +105,6 @@ async function getProductsOnSale() {
     const products = await Product.find({ sale: { $gt: 0 } });
     return products;
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -138,7 +128,6 @@ async function checkColorAvailability(productName, color) {
       return false;
     }
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -154,7 +143,6 @@ async function checkSizeAvailability(productName, size) {
       return false;
     }
   } catch (error) {
-    console.error("Error querying database:", error);
     throw new Error("Failed to query database");
   }
 }
@@ -203,14 +191,12 @@ function getOrderIdFromData(data) {
   if (data.entities && data.entities["order_id:order_id"]) {
     orderId = data.entities["order_id:order_id"][0].value;
     if (!/^[0-9a-fA-F]+$/.test(orderId)) {
-      console.error("Invalid order ID received from Wit.ai:", orderId);
       return null;
     }
   }
   return orderId;
 }
 
-// Các hàm xử lý intent
 async function handleAskPrice(data) {
   if (data.entities && data.entities["product_name:product_name"]) {
     const productName = data.entities["product_name:product_name"][0].value;
@@ -382,35 +368,32 @@ async function handleAskSaleProducts() {
 async function handleAskSizeRecommendation(data) {
   let height, weight, gender;
 
-  // Lấy height từ wit/distance
   if (data.entities && data.entities["wit$distance:distance"]) {
     for (const entity of data.entities["wit$distance:distance"]) {
       if (entity.unit === "centimetre" || entity.unit === "meter") {
         height = entity.value;
         if (entity.unit === "meter") {
-          height *= 100; // Đổi từ mét sang centimet
+          height *= 100;
         }
-        break; // Lấy giá trị đầu tiên tìm thấy
+        break;
       }
     }
   }
 
-  // Nếu không có wit/distance, thử lấy từ wit/number
   if (!height && data.entities && data.entities["wit$number:number"]) {
     for (const entity of data.entities["wit$number:number"]) {
       if (!height) {
         height = entity.value;
-        break; // Lấy giá trị đầu tiên tìm thấy
+        break;
       }
     }
   }
 
-  // Lấy weight từ wit/quantity
   if (data.entities && data.entities["wit$quantity:quantity"]) {
     for (const entity of data.entities["wit$quantity:quantity"]) {
       if (entity.unit === "kilogram") {
         weight = entity.value;
-        break; // Lấy giá trị đầu tiên tìm thấy
+        break;
       } else if (entity.unit === "gram") {
         weight = entity.value / 1000;
         break;
@@ -418,26 +401,21 @@ async function handleAskSizeRecommendation(data) {
     }
   }
 
-  // Nếu không có wit/quantity, thử lấy từ wit/number
   if (!weight && data.entities && data.entities["wit$number:number"]) {
     for (const entity of data.entities["wit$number:number"]) {
       if (!weight) {
         weight = entity.value;
-        break; // Lấy giá trị đầu tiên tìm thấy
+        break;
       }
     }
   }
 
-  // Lấy gender
   if (data.entities && data.entities["gender:gender"]) {
     gender = data.entities["gender:gender"][0].value;
   }
 
-  console.log("height:", height, "weight:", weight, "gender:", gender); // Debug: In ra các giá trị
-
   if (height && weight) {
     const recommendedSizes = getSizeRecommendation(height, weight, gender);
-    console.log("recommendedSizes:", recommendedSizes); // Debug: In ra recommendedSizes
     if (recommendedSizes.length > 0) {
       return `Based on your height and weight, the recommended size for you is: ${recommendedSizes.join(
         ", "
@@ -456,7 +434,6 @@ async function handleAskOrderStatus(data) {
   if (data.entities && data.entities["order_id:order_id"]) {
     orderId = data.entities["order_id:order_id"][0].value;
     if (!/^[0-9a-fA-F]+$/.test(orderId)) {
-      console.error("Invalid order ID received from Wit.ai:", orderId);
       return "Invalid order ID format.";
     }
   }
@@ -475,7 +452,7 @@ async function handleAskOrderStatus(data) {
             ? "Paid and Delivered"
             : "Paid, Not Delivered"
           : "Not Paid"
-      }\n`; // Thêm trạng thái isPaid và isDelivered
+      }\n`;
       responseText += `- Items:\n`;
       order.orderItems.forEach((item) => {
         responseText += `  - ${item.name} (Quantity: ${
@@ -500,7 +477,6 @@ async function handleAskOrderStatus(data) {
   }
 }
 
-// Hàm ánh xạ intent đến hàm xử lý
 const intentHandlers = {
   ask_price: handleAskPrice,
   greeting: handleGreeting,
@@ -515,12 +491,9 @@ const intentHandlers = {
   ask_order_status: handleAskOrderStatus,
 };
 
-// Hàm xử lý chính
 export async function chatWithWitAi(prompt) {
   try {
     const data = await client.message(prompt, {});
-    console.log("data.entities", data.entities);
-    console.log("data", data);
 
     let result = {
       responseText: null,
@@ -544,7 +517,6 @@ export async function chatWithWitAi(prompt) {
           result.responseText = handlerResult?.responseText;
         }
       } else {
-        console.warn(`No handler found for intent: ${intent}`);
         result.responseText =
           "Sorry, I am not programmed to handle that request yet.";
       }
@@ -553,7 +525,6 @@ export async function chatWithWitAi(prompt) {
     }
     return result;
   } catch (error) {
-    console.error("Error while communicating with Wit.ai:", error);
     throw new Error(`Failed to communicate with Wit.ai API: ${error.message}`);
   }
 }

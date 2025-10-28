@@ -377,8 +377,6 @@ router.get('/personalized/:userId', asyncHandler(async (req, res) => {
 
 router.post('/train', asyncHandler(async (req, res) => {
   try {
-    console.log('🚀 Starting model training...');
-    
     // Train both models
     const gnnStart = Date.now();
     await gnnRecommender.train();

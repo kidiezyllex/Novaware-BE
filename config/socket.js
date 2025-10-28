@@ -12,10 +12,7 @@ export const initSocket = (server) => {
   const connectedUsers = {};
 
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
     socket.on("userLogin", (userId, isAdmin) => {
-      console.log(`User ${userId} logged in`);
       userStatuses[userId] = true;
       socket.userId = userId;
       connectedUsers[socket.id] = userId;
@@ -23,13 +20,11 @@ export const initSocket = (server) => {
 
       if (isAdmin) {
         socket.join("admin_notifications");
-        console.log(`Admin ${userId} joined admin_notifications`);
       }
     });
 
     socket.on("joinRoom", (room) => {
       socket.join(room);
-      console.log(`User ${socket.userId} joined room ${room}`);
     });
 
     socket.on("sendMessage", (data) => {
@@ -60,7 +55,6 @@ export const initSocket = (server) => {
     });
 
     socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
       const disconnectedUserId = connectedUsers[socket.id];
       if (disconnectedUserId) {
         userStatuses[disconnectedUserId] = false;

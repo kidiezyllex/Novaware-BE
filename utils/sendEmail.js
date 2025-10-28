@@ -20,8 +20,6 @@ const sendEmail = async (options) => {
   };
 
   const info = await transporter.sendMail(mailOptions);
-
-  console.log('Email sent: %s', info.messageId);
 };
 
 export default sendEmail;

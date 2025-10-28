@@ -84,8 +84,6 @@ const addOrderItems = asyncHandler(async (req, res) => {
     });
 
     const createdOrder = await order.save();
-    console.log("Order created:", createdOrder._id);
-
     res.status(201).json(createdOrder);
   }
 });
@@ -154,8 +152,6 @@ const confirmOrder = asyncHandler(async (req, res) => {
             const product = await Product.findById(item.product);
 
             if (product) {
-              console.log("Updating product:", product._id);
-
               const updateObject = {
                 $inc: {},
               };
@@ -392,7 +388,6 @@ const cancelOrder = asyncHandler(async (req, res) => {
   }
 
   if (!order.isProcessing) {
-    console.log("Order is not processing:", order._id, order.isProcessing);
     res.status(400);
     throw new Error(
       "Order cannot be cancelled because it is not in Processing mode"

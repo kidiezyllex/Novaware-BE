@@ -1,0 +1,948 @@
+openapi: 3.0.3
+info:
+  title: Novaware Product API
+  description: API documentation for product management endpoints
+  version: 1.0.0
+  contact:
+    name: Novaware Team
+servers:
+  - url: http://localhost:5000/api
+    description: Development server
+  - url: https://api.novaware.com/api
+    description: Production server
+
+paths:
+  /products:
+    get:
+      summary: Get all products
+      description: Retrieve a paginated list of products with optional search functionality
+      tags:
+        - Products
+      parameters:
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: keyword
+          in: query
+          description: Search keyword for product name
+          required: false
+          schema:
+            type: string
+        - name: option
+          in: query
+          description: Option to get all products without pagination
+          required: false
+          schema:
+            type: string
+            enum: [all]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                    description: Current page number
+                  pages:
+                    type: integer
+                    description: Total number of pages
+                  count:
+                    type: integer
+                    description: Total number of products
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create a new product
+      description: Create a new product (Admin only)
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductRequest'
+      responses:
+        '201':
+          description: Product created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (Admin access required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /products/filter:
+    get:
+      summary: Filter products
+      description: Filter products by various criteria including category, brand, price range, rating, and size
+      tags:
+        - Products
+      parameters:
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: keyword
+          in: query
+          description: Search keyword for product name
+          required: false
+          schema:
+            type: string
+        - name: categories
+          in: query
+          description: Comma-separated list of categories
+          required: false
+          schema:
+            type: string
+        - name: brands
+          in: query
+          description: Comma-separated list of brands
+          required: false
+          schema:
+            type: string
+        - name: size
+          in: query
+          description: Product size filter
+          required: false
+          schema:
+            type: string
+            enum: [s, m, l, xl]
+        - name: rating
+          in: query
+          description: Minimum rating filter
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 5
+        - name: priceMin
+          in: query
+          description: Minimum price filter
+          required: false
+          schema:
+            type: number
+        - name: priceMax
+          in: query
+          description: Maximum price filter
+          required: false
+          schema:
+            type: number
+        - name: sort_by
+          in: query
+          description: Sort products by criteria
+          required: false
+          schema:
+            type: string
+            enum: [latest, rating, sale, priceAsc, priceDesc]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  count:
+                    type: integer
+
+  /products/top:
+    get:
+      summary: Get top rated products
+      description: Retrieve products sorted by highest rating
+      tags:
+        - Products
+      parameters:
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          description: Number of products per page
+          required: false
+          schema:
+            type: integer
+            default: 12
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  count:
+                    type: integer
+
+  /products/latest:
+    get:
+      summary: Get latest products
+      description: Retrieve products sorted by creation date (newest first)
+      tags:
+        - Products
+      parameters:
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  count:
+                    type: integer
+
+  /products/sale:
+    get:
+      summary: Get products on sale
+      description: Retrieve products that have a sale percentage greater than 0
+      tags:
+        - Products
+      parameters:
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  count:
+                    type: integer
+
+  /products/related:
+    get:
+      summary: Get related products
+      description: Retrieve products related to a specific category
+      tags:
+        - Products
+      parameters:
+        - name: category
+          in: query
+          description: Product category to find related products
+          required: false
+          schema:
+            type: string
+        - name: excludeId
+          in: query
+          description: Product ID to exclude from results
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+
+  /products/price:
+    get:
+      summary: Get products sorted by price
+      description: Retrieve products sorted by price (ascending or descending)
+      tags:
+        - Products
+      parameters:
+        - name: sortBy
+          in: query
+          description: Sort order for price
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+        - name: pageNumber
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            default: 1
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  page:
+                    type: integer
+                  pages:
+                    type: integer
+                  count:
+                    type: integer
+
+  /products/recommend-size/{userId}:
+    get:
+      summary: Recommend size for user
+      description: Get size recommendation for a specific user based on their profile
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          description: User ID for size recommendation
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendedSize:
+                    type: string
+                    enum: [s, m, l, xl]
+        '400':
+          description: Bad request - Incomplete user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: User not found or no recommendation available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /products/{id}:
+    get:
+      summary: Get product by ID
+      description: Retrieve a single product by its ID
+      tags:
+        - Products
+      parameters:
+        - name: id
+          in: path
+          description: Product ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Update product
+      description: Update an existing product (Admin only)
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Product ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
+      responses:
+        '200':
+          description: Product updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (Admin access required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      summary: Delete product
+      description: Delete a product (Admin only)
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Product ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Product removed"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden (Admin access required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /products/{id}/reviews:
+    post:
+      summary: Create product review
+      description: Add a review for a product
+      tags:
+        - Products
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          description: Product ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Review created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Review added"
+        '400':
+          description: Bad request or product already reviewed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Product:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Product ID
+          example: "68fd616951f9562e9cca6b0e"
+        user:
+          type: string
+          description: User ID who created the product
+          example: "68fd60d96f16962acc50e2f2"
+        name:
+          type: string
+          description: Product name
+          example: "YUEDGE 5 Pairs Men's Moisture Control Cushioned Dry Fit Casual Athletic Crew Socks for Men (Blue, Size 9-12)"
+        images:
+          type: array
+          items:
+            type: string
+          description: Array of product image URLs
+          example: ["https://m.media-amazon.com/images/I/41+cCfaVOFS._AC_.jpg"]
+        brand:
+          type: string
+          description: Product brand
+          example: "Langworth - Marvin"
+        category:
+          type: string
+          description: Product category
+          example: "other"
+        description:
+          type: string
+          description: Product description
+          example: "No description"
+        rating:
+          type: number
+          format: double
+          description: Product average rating
+          example: 4.6
+        numReviews:
+          type: integer
+          description: Number of reviews
+          example: 16
+        price:
+          type: number
+          description: Product price
+          example: 778129
+        sale:
+          type: number
+          description: Sale percentage
+          example: 26
+        countInStock:
+          type: integer
+          description: Total count in stock
+          example: 5
+        size:
+          type: object
+          properties:
+            s:
+              type: integer
+              description: Small size count
+              example: 4
+            m:
+              type: integer
+              description: Medium size count
+              example: 9
+            l:
+              type: integer
+              description: Large size count
+              example: 1
+            xl:
+              type: integer
+              description: Extra large size count
+              example: 19
+        colors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Color name
+                example: "Blue"
+              hexCode:
+                type: string
+                description: Color hex code
+                example: "#0000FF"
+            required:
+              - name
+              - hexCode
+          description: Available colors with name and hex code
+          example: [{"name": "Blue", "hexCode": "#0000FF"}, {"name": "Red", "hexCode": "#FF0000"}]
+        outfitTags:
+          type: array
+          items:
+            type: string
+          description: Outfit styling tags
+          example: []
+        compatibleProducts:
+          type: array
+          items:
+            type: string
+          description: Compatible product IDs
+          example: []
+        featureVector:
+          type: array
+          items:
+            type: number
+          description: Feature vector for recommendations
+          example: []
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+          description: Product reviews
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2025-10-25T23:46:51.065+00:00"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: "2025-10-25T23:46:51.065+00:00"
+
+    Review:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Review ID
+        name:
+          type: string
+          description: Reviewer name
+          example: "John Doe"
+        rating:
+          type: number
+          description: Review rating (1-5)
+          example: 5
+        comment:
+          type: string
+          description: Review comment
+          example: "Great product!"
+        user:
+          type: string
+          description: User ID who wrote the review
+          example: "68fd60d96f16962acc50e2f2"
+        createdAt:
+          type: string
+          format: date-time
+          description: Review creation timestamp
+        updatedAt:
+          type: string
+          format: date-time
+          description: Review update timestamp
+
+    CreateProductRequest:
+      type: object
+      required:
+        - name
+        - brand
+        - category
+        - description
+        - price
+      properties:
+        name:
+          type: string
+          description: Product name
+          example: "YUEDGE 5 Pairs Men's Moisture Control Cushioned Dry Fit Casual Athletic Crew Socks"
+        brand:
+          type: string
+          description: Product brand
+          example: "Langworth - Marvin"
+        category:
+          type: string
+          description: Product category
+          example: "other"
+        description:
+          type: string
+          description: Product description
+          example: "High-quality athletic socks with moisture control"
+        price:
+          type: number
+          description: Product price
+          example: 778129
+        sale:
+          type: number
+          description: Sale percentage (0-100)
+          example: 26
+        images:
+          type: array
+          items:
+            type: string
+          description: Array of product image URLs
+          example: ["https://m.media-amazon.com/images/I/41+cCfaVOFS._AC_.jpg"]
+        size:
+          type: object
+          properties:
+            s:
+              type: integer
+              description: Small size count
+              example: 4
+            m:
+              type: integer
+              description: Medium size count
+              example: 9
+            l:
+              type: integer
+              description: Large size count
+              example: 1
+            xl:
+              type: integer
+              description: Extra large size count
+              example: 19
+        colors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Color name
+                example: "Blue"
+              hexCode:
+                type: string
+                description: Color hex code
+                example: "#0000FF"
+            required:
+              - name
+              - hexCode
+          description: Available colors with name and hex code
+          example: [{"name": "Blue", "hexCode": "#0000FF"}, {"name": "Black", "hexCode": "#000000"}]
+        outfitTags:
+          type: array
+          items:
+            type: string
+          description: Outfit styling tags
+          example: ["casual", "athletic", "summer"]
+        compatibleProducts:
+          type: array
+          items:
+            type: string
+          description: Compatible product IDs
+          example: []
+        featureVector:
+          type: array
+          items:
+            type: number
+          description: Feature vector for recommendations
+          example: []
+
+    UpdateProductRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Product name
+        brand:
+          type: string
+          description: Product brand
+        category:
+          type: string
+          description: Product category
+        description:
+          type: string
+          description: Product description
+        price:
+          type: number
+          description: Product price
+        sale:
+          type: number
+          description: Sale percentage (0-100)
+        images:
+          type: array
+          items:
+            type: string
+          description: Array of product image URLs
+        size:
+          type: object
+          properties:
+            s:
+              type: integer
+              description: Small size count
+            m:
+              type: integer
+              description: Medium size count
+            l:
+              type: integer
+              description: Large size count
+            xl:
+              type: integer
+              description: Extra large size count
+        colors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: Color name
+              hexCode:
+                type: string
+                description: Color hex code
+            required:
+              - name
+              - hexCode
+          description: Available colors with name and hex code
+        outfitTags:
+          type: array
+          items:
+            type: string
+          description: Outfit styling tags
+        compatibleProducts:
+          type: array
+          items:
+            type: string
+          description: Compatible product IDs
+        featureVector:
+          type: array
+          items:
+            type: number
+          description: Feature vector for recommendations
+
+    CreateReviewRequest:
+      type: object
+      required:
+        - rating
+        - comment
+      properties:
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+          description: Review rating (1-5)
+          example: 5
+        comment:
+          type: string
+          description: Review comment
+          example: "Great product, highly recommended!"
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Error message
+          example: "Product not found"
+        error:
+          type: string
+          description: Error type
+          example: "Not Found"
+
+tags:
+  - name: Products
+    description: Product management operations

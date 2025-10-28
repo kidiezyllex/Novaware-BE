@@ -7,6 +7,73 @@ import cloudinary from '../config/cloudinary.js';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Upload
+ *     description: File upload endpoints
+ */
+
+/**
+ * @swagger
+ * /upload:
+ *   post:
+ *     summary: Upload images
+ *     description: Upload multiple images to Cloudinary storage
+ *     tags: [Upload]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: Image files to upload (max 12 files)
+ *                 maxItems: 12
+ *     responses:
+ *       200:
+ *         description: Images uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UploadResponse'
+ *       400:
+ *         description: Bad request - Unsupported file type
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Unsupported file type! Only JPEG, PNG, and WEBP are allowed."
+ *       405:
+ *         description: Method not allowed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "POST method not allowed"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "An error occurred while processing the images"
+ */
+
 // Cấu hình Multer: thêm bộ lọc loại file
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

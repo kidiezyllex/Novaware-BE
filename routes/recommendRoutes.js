@@ -7,6 +7,46 @@ import Product from '../models/productModel.js';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /recommend/gnn/{userId}:
+ *   get:
+ *     summary: Get GNN-based product recommendations
+ *     description: Generate product recommendations using Graph Neural Network model
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of recommendations to return
+ *     responses:
+ *       200:
+ *         description: GNN recommendations generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RecommendationResponse'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error generating recommendations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/gnn/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { k = 10 } = req.query;
@@ -40,6 +80,46 @@ router.get('/gnn/:userId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/hybrid/{userId}:
+ *   get:
+ *     summary: Get hybrid-based product recommendations
+ *     description: Generate product recommendations using hybrid collaborative and content-based filtering
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of recommendations to return
+ *     responses:
+ *       200:
+ *         description: Hybrid recommendations generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RecommendationResponse'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error generating recommendations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { k = 10 } = req.query;
@@ -73,6 +153,46 @@ router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/best/{userId}:
+ *   get:
+ *     summary: Get best model recommendations
+ *     description: Generate recommendations using the best performing model (currently GNN)
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of recommendations to return
+ *     responses:
+ *       200:
+ *         description: Best recommendations generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/RecommendationResponse'
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error generating recommendations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/best/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { k = 10 } = req.query;
@@ -106,6 +226,80 @@ router.get('/best/:userId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/outfits/{userId}:
+ *   get:
+ *     summary: Get outfit recommendations
+ *     description: Generate complete outfit recommendations for a user
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 3
+ *         description: Number of outfit recommendations to return
+ *     responses:
+ *       200:
+ *         description: Outfit recommendations generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     outfits:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                           products:
+ *                             type: array
+ *                             items:
+ *                               $ref: '#/components/schemas/Product'
+ *                           style:
+ *                             type: string
+ *                           totalPrice:
+ *                             type: number
+ *                           compatibilityScore:
+ *                             type: number
+ *                           gender:
+ *                             type: string
+ *                           description:
+ *                             type: string
+ *                     model:
+ *                       type: string
+ *                     timestamp:
+ *                       type: string
+ *                       format: date-time
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error generating outfit recommendations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/outfits/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { k = 3 } = req.query;
@@ -146,6 +340,46 @@ router.get('/outfits/:userId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/similar/{productId}:
+ *   get:
+ *     summary: Get similar products
+ *     description: Find products similar to the specified product using content-based filtering
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Product ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of similar products to return
+ *     responses:
+ *       200:
+ *         description: Similar products found successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/SimilarProductsResponse'
+ *       404:
+ *         description: Product not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error finding similar products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/similar/:productId', asyncHandler(async (req, res) => {
   const { productId } = req.params;
   const { k = 10 } = req.query;
@@ -217,6 +451,40 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/trending:
+ *   get:
+ *     summary: Get trending products
+ *     description: Get products that are currently trending based on recent interactions
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of trending products to return
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 30
+ *         description: Number of days to look back for trending calculation
+ *     responses:
+ *       200:
+ *         description: Trending products retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TrendingProductsResponse'
+ *       500:
+ *         description: Error retrieving trending products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/trending', asyncHandler(async (req, res) => {
   const { k = 10, days = 30 } = req.query;
   
@@ -302,6 +570,62 @@ router.get('/trending', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/personalized/{userId}:
+ *   get:
+ *     summary: Get personalized recommendations
+ *     description: Get product recommendations based on user preferences and interaction history
+ *     tags: [Recommendations]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: k
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of personalized recommendations to return
+ *     responses:
+ *       200:
+ *         description: Personalized recommendations generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     products:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *                     userPreferences:
+ *                       type: object
+ *                     count:
+ *                       type: number
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NotFoundError'
+ *       500:
+ *         description: Error generating personalized recommendations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.get('/personalized/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const { k = 10 } = req.query;
@@ -375,6 +699,27 @@ router.get('/personalized/:userId', asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * @swagger
+ * /recommend/train:
+ *   post:
+ *     summary: Train recommendation models
+ *     description: Train both GNN and Hybrid recommendation models
+ *     tags: [Recommendations]
+ *     responses:
+ *       200:
+ *         description: Models trained successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TrainingResponse'
+ *       500:
+ *         description: Error training models
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/train', asyncHandler(async (req, res) => {
   try {
     // Train both models

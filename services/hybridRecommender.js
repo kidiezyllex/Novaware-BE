@@ -1,4 +1,5 @@
 import { Matrix } from 'ml-matrix';
+import { TfIdf } from 'natural';
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
 
@@ -79,7 +80,23 @@ class HybridRecommender {
   }
 
   async computeItemSimilarity() {
-    const products = await Product.find().select('_id featureVector category brand outfitTags');
+    // Initialize TF-IDF and compute feature vectors
+    const tfidf = new TfIdf();
+    const products = await Product.find().select('_id description featureVector category brand outfitTags');
+    
+    // Add product descriptions to TF-IDF
+    products.forEach(p => tfidf.addDocument(p.description || ''));
+    
+    // Save TF-IDF vectors to products
+    for (let i = 0; i < products.length; i++) {
+      const vector = [];
+      tfidf.tfidfs(products[i].description || '', (j, measure) => vector.push(measure));
+      await Product.findByIdAndUpdate(products[i]._id, { featureVector: vector });
+      
+      // Update the products array with new feature vectors
+      products[i].featureVector = vector;
+    }
+    
     const numItems = products.length;
     this.itemSimilarityMatrix = new Matrix(numItems, numItems);
     
@@ -113,7 +130,23 @@ class HybridRecommender {
       return 0.1;
     }
     
-    return this.cosineSimilarity(vector1, vector2) * 0.5;
+    // Ensure vectors have the same length for proper cosine similarity calculation
+    const maxLength = Math.max(vector1.length, vector2.length);
+    const normalizedVector1 = [...vector1];
+    const normalizedVector2 = [...vector2];
+    
+    // Pad shorter vector with zeros
+    while (normalizedVector1.length < maxLength) {
+      normalizedVector1.push(0);
+    }
+    while (normalizedVector2.length < maxLength) {
+      normalizedVector2.push(0);
+    }
+    
+    const similarity = this.cosineSimilarity(normalizedVector1, normalizedVector2);
+    
+    // Apply TF-IDF weight and ensure similarity is meaningful
+    return Math.max(similarity * 0.5, 0.05);
   }
 
   computeTagSimilarity(tags1, tags2) {

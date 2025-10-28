@@ -276,6 +276,224 @@ const options = {
               description: 'Error stack trace'
             }
           }
+        },
+        RecommendationResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean',
+              description: 'Request success status'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                products: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/components/schemas/Product'
+                  }
+                },
+                outfits: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                      products: {
+                        type: 'array',
+                        items: { $ref: '#/components/schemas/Product' }
+                      },
+                      style: { type: 'string' },
+                      totalPrice: { type: 'number' },
+                      compatibilityScore: { type: 'number' },
+                      gender: { type: 'string' },
+                      description: { type: 'string' }
+                    }
+                  }
+                },
+                model: {
+                  type: 'string',
+                  description: 'Recommendation model used'
+                },
+                timestamp: {
+                  type: 'string',
+                  format: 'date-time'
+                }
+              }
+            },
+            message: {
+              type: 'string',
+              description: 'Response message'
+            }
+          }
+        },
+        SimilarProductsResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                originalProduct: {
+                  $ref: '#/components/schemas/Product'
+                },
+                similarProducts: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/components/schemas/Product'
+                  }
+                },
+                count: {
+                  type: 'number'
+                }
+              }
+            },
+            message: {
+              type: 'string'
+            }
+          }
+        },
+        TrendingProductsResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                trendingProducts: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/components/schemas/Product'
+                  }
+                },
+                period: {
+                  type: 'string'
+                },
+                count: {
+                  type: 'number'
+                }
+              }
+            },
+            message: {
+              type: 'string'
+            }
+          }
+        },
+        TrainingResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                gnn: {
+                  type: 'object',
+                  properties: {
+                    trained: { type: 'boolean' },
+                    trainingTime: { type: 'string' }
+                  }
+                },
+                hybrid: {
+                  type: 'object',
+                  properties: {
+                    trained: { type: 'boolean' },
+                    trainingTime: { type: 'string' }
+                  }
+                }
+              }
+            },
+            message: {
+              type: 'string'
+            }
+          }
+        },
+        Chat: {
+          type: 'object',
+          required: ['userId', 'message'],
+          properties: {
+            _id: {
+              type: 'string',
+              description: 'Chat ID'
+            },
+            userId: {
+              type: 'string',
+              description: 'User ID'
+            },
+            message: {
+              type: 'string',
+              description: 'Chat message'
+            },
+            timestamp: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Message timestamp'
+            },
+            sender: {
+              type: 'string',
+              enum: ['user', 'admin'],
+              description: 'Message sender'
+            }
+          }
+        },
+        ContentSection: {
+          type: 'object',
+          required: ['title', 'content'],
+          properties: {
+            _id: {
+              type: 'string',
+              description: 'Content section ID'
+            },
+            title: {
+              type: 'string',
+              description: 'Section title'
+            },
+            content: {
+              type: 'string',
+              description: 'Section content'
+            },
+            type: {
+              type: 'string',
+              description: 'Section type'
+            },
+            order: {
+              type: 'number',
+              description: 'Display order'
+            },
+            isActive: {
+              type: 'boolean',
+              description: 'Whether section is active'
+            },
+            createdAt: {
+              type: 'string',
+              format: 'date-time'
+            },
+            updatedAt: {
+              type: 'string',
+              format: 'date-time'
+            }
+          }
+        },
+        UploadResponse: {
+          type: 'object',
+          properties: {
+            message: {
+              type: 'string',
+              description: 'Upload status message'
+            },
+            data: {
+              type: 'array',
+              items: {
+                type: 'string',
+                description: 'Uploaded image URLs'
+              }
+            }
+          }
         }
       },
       responses: {

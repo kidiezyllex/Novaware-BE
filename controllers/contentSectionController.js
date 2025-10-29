@@ -4,8 +4,26 @@ import asyncHandler from 'express-async-handler';
 const getContentSections = asyncHandler(async (req, res) => {
   const type = req.query.type;
   const query = type ? { type } : {};
-  const contentSections = await ContentSection.find(query);
-  res.json(contentSections);
+  
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
+  const count = await ContentSection.countDocuments(query);
+  const contentSections = await ContentSection.find(query)
+    .limit(perPage)
+    .skip(perPage * (page - 1))
+    .sort({ position: 1 });
+    
+  res.json({
+    success: true,
+    data: {
+      contentSections,
+      page,
+      pages: Math.ceil(count / perPage),
+      count
+    },
+    message: "Content sections retrieved successfully"
+  });
 });
 
 const createContentSection = asyncHandler(async (req, res) => {

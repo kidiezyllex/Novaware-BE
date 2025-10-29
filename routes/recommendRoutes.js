@@ -11,7 +11,7 @@ const router = express.Router();
  * @swagger
  * /recommend/gnn/{userId}:
  *   get:
- *     summary: Get GNN-based product recommendations
+ *     summary: Lấy gợi ý sản phẩm dựa trên GNN
  *     description: Generate product recommendations using Graph Neural Network model
  *     tags: [Recommendations]
  *     parameters:
@@ -25,8 +25,20 @@ const router = express.Router();
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Number of recommendations to return
+ *           default: 9
+ *         description: Number of recommendations to generate (before pagination)
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng recommendations mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: GNN recommendations generated successfully
@@ -39,17 +51,17 @@ const router = express.Router();
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error generating recommendations
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/gnn/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 10 } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
     // Validate user exists
@@ -61,12 +73,28 @@ router.get('/gnn/:userId', asyncHandler(async (req, res) => {
       });
     }
     
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
+    
     // Generate recommendations
     const recommendations = await gnnRecommender.recommend(userId, parseInt(k));
     
+    // Apply pagination to recommendations
+    const paginatedRecommendations = {
+      ...recommendations,
+      products: recommendations.products?.slice(skip, skip + limit) || [],
+      pagination: {
+        page,
+        pages: Math.ceil((recommendations.products?.length || 0) / limit),
+        count: recommendations.products?.length || 0,
+        perPage: limit
+      }
+    };
+    
     res.json({
       success: true,
-      data: recommendations,
+      data: paginatedRecommendations,
       message: 'GNN recommendations generated successfully'
     });
     
@@ -84,7 +112,7 @@ router.get('/gnn/:userId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/hybrid/{userId}:
  *   get:
- *     summary: Get hybrid-based product recommendations
+ *     summary: Lấy gợi ý sản phẩm dựa trên hybrid
  *     description: Generate product recommendations using hybrid collaborative and content-based filtering
  *     tags: [Recommendations]
  *     parameters:
@@ -98,8 +126,20 @@ router.get('/gnn/:userId', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Number of recommendations to return
+ *           default: 9
+ *         description: Number of recommendations to generate (before pagination)
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng recommendations mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: Hybrid recommendations generated successfully
@@ -112,17 +152,17 @@ router.get('/gnn/:userId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error generating recommendations
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 10 } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
     // Validate user exists
@@ -134,12 +174,28 @@ router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
       });
     }
     
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
+    
     // Generate recommendations
     const recommendations = await hybridRecommender.recommend(userId, parseInt(k));
     
+    // Apply pagination to recommendations
+    const paginatedRecommendations = {
+      ...recommendations,
+      products: recommendations.products?.slice(skip, skip + limit) || [],
+      pagination: {
+        page,
+        pages: Math.ceil((recommendations.products?.length || 0) / limit),
+        count: recommendations.products?.length || 0,
+        perPage: limit
+      }
+    };
+    
     res.json({
       success: true,
-      data: recommendations,
+      data: paginatedRecommendations,
       message: 'Hybrid recommendations generated successfully'
     });
     
@@ -157,7 +213,7 @@ router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/best/{userId}:
  *   get:
- *     summary: Get best model recommendations
+ *     summary: Lấy gợi ý từ mô hình tốt nhất
  *     description: Generate recommendations using the best performing model (currently GNN)
  *     tags: [Recommendations]
  *     parameters:
@@ -171,8 +227,20 @@ router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Number of recommendations to return
+ *           default: 9
+ *         description: Number of recommendations to generate (before pagination)
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng recommendations mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: Best recommendations generated successfully
@@ -185,17 +253,17 @@ router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error generating recommendations
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/best/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 10 } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
     // Validate user exists
@@ -207,12 +275,28 @@ router.get('/best/:userId', asyncHandler(async (req, res) => {
       });
     }
     
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
+    
     // Use GNN as the best model (can be changed based on evaluation results)
     const recommendations = await gnnRecommender.recommend(userId, parseInt(k));
     
+    // Apply pagination to recommendations
+    const paginatedRecommendations = {
+      ...recommendations,
+      products: recommendations.products?.slice(skip, skip + limit) || [],
+      pagination: {
+        page,
+        pages: Math.ceil((recommendations.products?.length || 0) / limit),
+        count: recommendations.products?.length || 0,
+        perPage: limit
+      }
+    };
+    
     res.json({
       success: true,
-      data: recommendations,
+      data: paginatedRecommendations,
       message: 'Best recommendations generated successfully'
     });
     
@@ -230,7 +314,7 @@ router.get('/best/:userId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/outfits/{userId}:
  *   get:
- *     summary: Get outfit recommendations
+ *     summary: Lấy gợi ý trang phục
  *     description: Generate complete outfit recommendations for a user
  *     tags: [Recommendations]
  *     parameters:
@@ -244,8 +328,20 @@ router.get('/best/:userId', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 3
- *         description: Number of outfit recommendations to return
+ *           default: 9
+ *         description: Number of outfit recommendations to generate (before pagination)
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng outfit recommendations mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: Outfit recommendations generated successfully
@@ -292,17 +388,17 @@ router.get('/best/:userId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error generating outfit recommendations
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/outfits/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 3 } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
     // Validate user exists
@@ -314,14 +410,26 @@ router.get('/outfits/:userId', asyncHandler(async (req, res) => {
       });
     }
     
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
+    
     // Generate recommendations with outfits
     const recommendations = await gnnRecommender.recommend(userId, 20); // Get more products for better outfit creation
     
-    // Filter to only return outfits
+    // Filter to only return outfits with pagination
+    const paginatedOutfits = recommendations.outfits?.slice(skip, skip + limit) || [];
+    
     const response = {
-      outfits: recommendations.outfits.slice(0, parseInt(k)),
+      outfits: paginatedOutfits,
       model: recommendations.model,
-      timestamp: recommendations.timestamp
+      timestamp: recommendations.timestamp,
+      pagination: {
+        page,
+        pages: Math.ceil((recommendations.outfits?.length || 0) / limit),
+        count: recommendations.outfits?.length || 0,
+        perPage: limit
+      }
     };
     
     res.json({
@@ -344,7 +452,7 @@ router.get('/outfits/:userId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/similar/{productId}:
  *   get:
- *     summary: Get similar products
+ *     summary: Lấy sản phẩm tương tự
  *     description: Find products similar to the specified product using content-based filtering
  *     tags: [Recommendations]
  *     parameters:
@@ -358,8 +466,20 @@ router.get('/outfits/:userId', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Number of similar products to return
+ *           default: 9
+ *         description: Number of similar products to generate (before pagination)
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng similar products mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: Similar products found successfully
@@ -372,17 +492,17 @@ router.get('/outfits/:userId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error finding similar products
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/similar/:productId', asyncHandler(async (req, res) => {
   const { productId } = req.params;
-  const { k = 10 } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
     // Validate product exists
@@ -393,6 +513,10 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
         message: 'Product not found'
       });
     }
+    
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
     
     // Find similar products using content-based filtering
     const allProducts = await Product.find({ _id: { $ne: productId } })
@@ -425,18 +549,23 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
       }
     }
     
-    // Sort by similarity and return top K
-    const topSimilar = similarProducts
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, parseInt(k))
-      .map(item => item.product);
+    // Sort by similarity and apply pagination
+    const sortedSimilar = similarProducts.sort((a, b) => b.similarity - a.similarity);
+    const paginatedSimilar = sortedSimilar.slice(skip, skip + limit);
+    const topSimilar = paginatedSimilar.map(item => item.product);
     
     res.json({
       success: true,
       data: {
         originalProduct: product,
         similarProducts: topSimilar,
-        count: topSimilar.length
+        count: topSimilar.length,
+        pagination: {
+          page,
+          pages: Math.ceil(sortedSimilar.length / limit),
+          totalCount: sortedSimilar.length,
+          perPage: limit
+        }
       },
       message: 'Similar products found successfully'
     });
@@ -455,7 +584,7 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/trending:
  *   get:
- *     summary: Get trending products
+ *     summary: Lấy sản phẩm xu hướng
  *     description: Get products that are currently trending based on recent interactions
  *     tags: [Recommendations]
  *     parameters:
@@ -463,14 +592,26 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
- *         description: Number of trending products to return
+ *           default: 9
+ *         description: Number of trending products to generate (before pagination)
  *       - in: query
  *         name: days
  *         schema:
  *           type: integer
  *           default: 30
  *         description: Number of days to look back for trending calculation
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng trending products mỗi trang (mặc định 9)
  *     responses:
  *       200:
  *         description: Trending products retrieved successfully
@@ -483,12 +624,16 @@ router.get('/similar/:productId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/trending', asyncHandler(async (req, res) => {
-  const { k = 10, days = 30 } = req.query;
+  const { k = 9, days = 30, pageNumber = 1, perPage = 9 } = req.query;
   
   try {
+    const page = parseInt(pageNumber);
+    const limit = parseInt(perPage);
+    const skip = limit * (page - 1);
+    
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
     
@@ -533,9 +678,6 @@ router.get('/trending', asyncHandler(async (req, res) => {
         }
       },
       {
-        $limit: parseInt(k)
-      },
-      {
         $project: {
           _id: 1,
           name: 1,
@@ -550,12 +692,21 @@ router.get('/trending', asyncHandler(async (req, res) => {
       }
     ]);
     
+    // Apply pagination
+    const paginatedProducts = trendingProducts.slice(skip, skip + limit);
+    
     res.json({
       success: true,
       data: {
-        trendingProducts,
+        trendingProducts: paginatedProducts,
         period: `${days} days`,
-        count: trendingProducts.length
+        count: paginatedProducts.length,
+        pagination: {
+          page,
+          pages: Math.ceil(trendingProducts.length / limit),
+          totalCount: trendingProducts.length,
+          perPage: limit
+        }
       },
       message: 'Trending products retrieved successfully'
     });
@@ -574,7 +725,7 @@ router.get('/trending', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/personalized/{userId}:
  *   get:
- *     summary: Get personalized recommendations
+ *     summary: Lấy gợi ý cá nhân hóa
  *     description: Get product recommendations based on user preferences and interaction history
  *     tags: [Recommendations]
  *     parameters:
@@ -588,7 +739,7 @@ router.get('/trending', asyncHandler(async (req, res) => {
  *         name: k
  *         schema:
  *           type: integer
- *           default: 10
+ *           default: 9
  *         description: Number of personalized recommendations to return
  *     responses:
  *       200:
@@ -618,17 +769,17 @@ router.get('/trending', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/NotFoundError'
+ *               $ref: '#/components/responses/NotFoundError'
  *       500:
  *         description: Error generating personalized recommendations
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.get('/personalized/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 10 } = req.query;
+  const { k = 9 } = req.query;
   
   try {
     // Validate user exists
@@ -703,7 +854,7 @@ router.get('/personalized/:userId', asyncHandler(async (req, res) => {
  * @swagger
  * /recommend/train:
  *   post:
- *     summary: Train recommendation models
+ *     summary: Huấn luyện mô hình gợi ý
  *     description: Train both GNN and Hybrid recommendation models
  *     tags: [Recommendations]
  *     responses:
@@ -718,7 +869,7 @@ router.get('/personalized/:userId', asyncHandler(async (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               $ref: '#/components/responses/ErrorResponse'
  */
 router.post('/train', asyncHandler(async (req, res) => {
   try {

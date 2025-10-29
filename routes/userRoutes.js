@@ -16,7 +16,8 @@ import {
   getFavorites,
   checkHasPurchaseHistory,
   checkHasGender,
-  checkHasStylePreference
+  checkHasStylePreference,
+  getUsersForTesting
 } from '../controllers/userController.js';
 import { protect, checkAdmin, protectResetPassword, } from '../middlewares/authMiddleware.js';
 import passport from 'passport';
@@ -35,7 +36,7 @@ const router = express.Router();
  * @swagger
  * /users:
  *   post:
- *     summary: Register a new user
+ *     summary: Đăng ký người dùng mới
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -76,10 +77,23 @@ const router = express.Router();
  *       409:
  *         description: User already exists
  *   get:
- *     summary: Get all users (Admin only)
+ *     summary: Lấy danh sách tất cả người dùng (chỉ Admin)
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of users per page
  *     responses:
  *       200:
  *         description: Users retrieved successfully
@@ -106,7 +120,7 @@ router.route('/').post(registerUser).get(protect, checkAdmin, getUsers);
  * @swagger
  * /users/login:
  *   post:
- *     summary: User login
+ *     summary: Đăng nhập người dùng
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -198,13 +212,69 @@ router.put('/reset-password', protectResetPassword, resetPassword);
 
 router.route('/:userId/favorites').post(protect, addToFavorites); 
 router.route('/:userId/favorites/:productId').delete(protect, removeFromFavorites); 
+/**
+ * @swagger
+ * /users/{userId}/favorites:
+ *   get:
+ *     summary: Lấy danh sách sản phẩm yêu thích của người dùng
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of favorites per page
+ *     responses:
+ *       200:
+ *         description: Favorites retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     favorites:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *                     page:
+ *                       type: number
+ *                     pages:
+ *                       type: number
+ *                     count:
+ *                       type: number
+ *       401:
+ *         description: Unauthorized
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: User not found
+ */
 router.route('/:userId/favorites').get(protect, getFavorites); 
 
 /**
  * @swagger
  * /users/{userId}/check/purchase-history:
  *   get:
- *     summary: Check if user has purchase history
+ *     summary: Kiểm tra lịch sử mua hàng của người dùng
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -246,7 +316,7 @@ router.route('/:userId/check/purchase-history').get(protect, checkHasPurchaseHis
  * @swagger
  * /users/{userId}/check/gender:
  *   get:
- *     summary: Check if user has gender information
+ *     summary: Kiểm tra thông tin giới tính của người dùng
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -290,7 +360,7 @@ router.route('/:userId/check/gender').get(protect, checkHasGender);
  * @swagger
  * /users/{userId}/check/style-preference:
  *   get:
- *     summary: Check if user has style preference
+ *     summary: Kiểm tra sở thích phong cách của người dùng
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -329,6 +399,81 @@ router.route('/:userId/check/gender').get(protect, checkHasGender);
  *         description: User not found
  */
 router.route('/:userId/check/style-preference').get(protect, checkHasStylePreference);
+
+/**
+ * @swagger
+ * /users/testing:
+ *   get:
+ *     summary: Lấy danh sách người dùng để test các mô hình
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *           enum: [personalization, outfit-suggestions]
+ *         description: Loại test - personalization hoặc outfit-suggestions
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang (bắt đầu từ 1)
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Số lượng users mỗi trang (mặc định 9)
+ *     responses:
+ *       200:
+ *         description: Users retrieved successfully for testing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                     users:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           userId:
+ *                             type: string
+ *                           name:
+ *                             type: string
+ *                           email:
+ *                             type: string
+ *                           interactionCount:
+ *                             type: number
+ *                           categories:
+ *                             type: array
+ *                             items:
+ *                               type: string
+ *                             description: Only for outfit-suggestions type
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         page:
+ *                           type: number
+ *                         pages:
+ *                           type: number
+ *                         count:
+ *                           type: number
+ *                         perPage:
+ *                           type: number
+ *       400:
+ *         description: Bad request - Invalid type parameter
+ */
+router.route('/testing').get(getUsersForTesting);
 
 router
   .route('/profile')

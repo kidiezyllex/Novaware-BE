@@ -31,7 +31,7 @@ const getProducts = asyncHandler(async (req, res) => {
       const products = await Product.find({}).maxTimeMS(30000);
       sendSuccess(res, 200, "All products retrieved successfully", { products });
     } else {
-      const perPage = parseInt(req.query.pageSize) || 12;
+      const perPage = parseInt(req.query.pageSize) || 9;
       const page = parseInt(req.query.pageNumber) || 1;
 
       const keyword = req.query.keyword
@@ -198,7 +198,7 @@ const createProductReview = asyncHandler(async (req, res) => {
 });
 
 const getTopProducts = asyncHandler(async (req, res) => {
-  const perPage = parseInt(req.query.perPage) || 12;
+  const perPage = parseInt(req.query.perPage) || 9;
   const page = parseInt(req.query.pageNumber) || 1;
   const count = await Product.countDocuments({});
   const products = await Product.find({})
@@ -210,7 +210,7 @@ const getTopProducts = asyncHandler(async (req, res) => {
 });
 
 const getLatestProducts = asyncHandler(async (req, res) => {
-  const perPage = 12;
+  const perPage = parseInt(req.query.perPage) || 9;
   const page = parseInt(req.query.pageNumber) || 1;
   const count = await Product.countDocuments({});
 
@@ -223,7 +223,7 @@ const getLatestProducts = asyncHandler(async (req, res) => {
 });
 
 const getSaleProducts = asyncHandler(async (req, res) => {
-  const perPage = 12;
+  const perPage = parseInt(req.query.perPage) || 9;
   const page = parseInt(req.query.pageNumber) || 1;
   const count = await Product.countDocuments({ sale: { $gt: 0 } });
 
@@ -256,7 +256,7 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
 const getSortByPriceProducts = asyncHandler(async (req, res) => {
   const sortBy = req.query.sortBy || "asc";
 
-  const perPage = 12;
+  const perPage = parseInt(req.query.perPage) || 9;
   const page = parseInt(req.query.pageNumber) || 1;
   const skipCount = perPage * (page - 1);
   const count = await Product.countDocuments({});
@@ -320,7 +320,7 @@ const recommendSizeForUser = asyncHandler(async (req, res) => {
 });
 
 const filterProducts = asyncHandler(async (req, res) => {
-  const perPage = 12;
+  const perPage = parseInt(req.query.perPage) || 9;
   const page = parseInt(req.query.pageNumber) || 1;
 
   let query = {};

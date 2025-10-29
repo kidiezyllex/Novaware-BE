@@ -28,7 +28,7 @@ const router = express.Router();
  * @swagger
  * /products:
  *   get:
- *     summary: Get all products
+ *     summary: Lấy danh sách tất cả sản phẩm
  *     tags: [Products]
  *     parameters:
  *       - in: query
@@ -46,7 +46,7 @@ const router = express.Router();
  *         name: pageSize
  *         schema:
  *           type: integer
- *           default: 10
+ *           default: 9
  *         description: Number of products per page
  *     responses:
  *       200:
@@ -63,7 +63,7 @@ const router = express.Router();
  *                   items:
  *                     $ref: '#/components/schemas/Product'
  *   post:
- *     summary: Create a new product (Admin only)
+ *     summary: Tạo sản phẩm mới (chỉ Admin)
  *     tags: [Products]
  *     security:
  *       - bearerAuth: []

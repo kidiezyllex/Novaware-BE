@@ -6,8 +6,20 @@ import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../ut
 // @access  Public
 export const getBrands = async (req, res) => {
   try {
-    const brands = await Brand.find({});
-    sendSuccess(res, 200, "Brands retrieved successfully", { brands });
+    const perPage = parseInt(req.query.perPage) || 9;
+    const page = parseInt(req.query.pageNumber) || 1;
+    
+    const count = await Brand.countDocuments({});
+    const brands = await Brand.find({})
+      .limit(perPage)
+      .skip(perPage * (page - 1));
+      
+    sendSuccess(res, 200, "Brands retrieved successfully", { 
+      brands, 
+      page, 
+      pages: Math.ceil(count / perPage), 
+      count 
+    });
   } catch (error) {
     sendError(res, 500, "Unable to fetch brands");
   }

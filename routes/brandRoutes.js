@@ -20,8 +20,21 @@ const router = express.Router();
  * @swagger
  * /brands:
  *   get:
- *     summary: Get all brands
+ *     summary: Lấy danh sách tất cả thương hiệu
  *     tags: [Brands]
+ *     parameters:
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of brands per page
  *     responses:
  *       200:
  *         description: Brands retrieved successfully
@@ -37,7 +50,7 @@ const router = express.Router();
  *                   items:
  *                     $ref: '#/components/schemas/Brand'
  *   post:
- *     summary: Create a new brand (Admin only)
+ *     summary: Tạo thương hiệu mới (chỉ Admin)
  *     tags: [Brands]
  *     security:
  *       - bearerAuth: []

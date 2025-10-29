@@ -1,0 +1,11 @@
+{
+  "watch": ["server.js", "controllers/", "services/", "models/", "routes/", "config/"],
+  "ext": "js,json",
+  "ignore": ["node_modules/", "uploads/", "models/gnn_*.json"],
+  "exec": "node --max-old-space-size=4096 --expose-gc server.js",
+  "env": {
+    "NODE_ENV": "development",
+    "NODE_OPTIONS": "--max-old-space-size=4096 --expose-gc"
+  },
+  "delay": 1000
+}

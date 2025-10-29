@@ -1,7 +1,14 @@
 import { Matrix } from 'ml-matrix';
-import { TfIdf } from 'natural';
+import pkg from 'natural';
+const { TfIdf } = pkg;
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
+
+// Memory optimization constants
+const MAX_USERS = 2000; // Limit users to prevent memory overflow
+const MAX_PRODUCTS = 5000; // Limit products to prevent memory overflow
+const BATCH_SIZE = 100; // Process in smaller batches
+const MEMORY_CLEANUP_INTERVAL = 50; // Cleanup every N operations
 
 class HybridRecommender {
   constructor() {
@@ -13,6 +20,11 @@ class HybridRecommender {
     this.isTrained = false;
     this.cfWeight = 0.6;
     this.cbWeight = 0.4;
+    this.memoryStats = {
+      peakMemory: 0,
+      currentMemory: 0,
+      operationsCount: 0
+    };
   }
 
   async train() {
@@ -27,9 +39,24 @@ class HybridRecommender {
   }
 
   async buildUserItemMatrix() {
+    console.log('🏗️ Building user-item matrix with memory optimization...');
+    
+    // Limit dataset size to prevent memory overflow
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
-      .select('_id interactionHistory');
-    const products = await Product.find().select('_id');
+      .select('_id interactionHistory')
+      .limit(MAX_USERS)
+      .sort({ 'interactionHistory': -1 }); // Get most active users first
+      
+    const products = await Product.find()
+      .select('_id')
+      .limit(MAX_PRODUCTS)
+      .sort({ rating: -1 }); // Get highest rated products first
+    
+    console.log(`📊 Using ${users.length} users and ${products.length} products (limited for memory)`);
+    
+    // Clear existing maps to free memory
+    this.userIndexMap.clear();
+    this.itemIndexMap.clear();
     
     users.forEach((user, index) => {
       this.userIndexMap.set(user._id.toString(), index);
@@ -39,87 +66,220 @@ class HybridRecommender {
       this.itemIndexMap.set(product._id.toString(), index);
     });
     
+    // Initialize matrix with proper dimensions
     this.userItemMatrix = new Matrix(users.length, products.length);
     
     const interactionWeights = { 'view': 1, 'like': 2, 'cart': 3, 'purchase': 5, 'review': 4 };
     
-    for (const user of users) {
-      const userIndex = this.userIndexMap.get(user._id.toString());
+    // Process users in batches to manage memory
+    for (let i = 0; i < users.length; i += BATCH_SIZE) {
+      const batch = users.slice(i, i + BATCH_SIZE);
       
-      user.interactionHistory.forEach(interaction => {
-        const itemIndex = this.itemIndexMap.get(interaction.productId.toString());
-        if (itemIndex !== undefined) {
-          const weight = interactionWeights[interaction.interactionType] || 1;
-          const rating = interaction.rating || 3;
-          const score = weight * (rating / 5);
-          
-          this.userItemMatrix.set(userIndex, itemIndex, score);
-        }
-      });
+      for (const user of batch) {
+        const userIndex = this.userIndexMap.get(user._id.toString());
+        
+        user.interactionHistory.forEach(interaction => {
+          const itemIndex = this.itemIndexMap.get(interaction.productId.toString());
+          if (itemIndex !== undefined) {
+            const weight = interactionWeights[interaction.interactionType] || 1;
+            const rating = interaction.rating || 3;
+            const score = weight * (rating / 5);
+            
+            this.userItemMatrix.set(userIndex, itemIndex, score);
+          }
+        });
+      }
+      
+      // Memory cleanup after each batch
+      if (i % MEMORY_CLEANUP_INTERVAL === 0) {
+        this.performMemoryCleanup();
+      }
     }
+    
+    console.log('✅ User-item matrix built successfully');
   }
 
   async computeUserSimilarity() {
+    console.log('🔗 Computing user similarity with memory optimization...');
     const numUsers = this.userItemMatrix.rows;
-    this.userSimilarityMatrix = new Matrix(numUsers, numUsers);
     
-    for (let i = 0; i < numUsers; i++) {
-      for (let j = i; j < numUsers; j++) {
-        if (i === j) {
-          this.userSimilarityMatrix.set(i, j, 1.0);
-        } else {
-          const similarity = this.cosineSimilarity(
-            this.userItemMatrix.getRow(i),
-            this.userItemMatrix.getRow(j)
-          );
-          this.userSimilarityMatrix.set(i, j, similarity);
-          this.userSimilarityMatrix.set(j, i, similarity);
+    // Use sparse matrix approach for large datasets
+    if (numUsers > 1000) {
+      console.log('📊 Using sparse similarity computation for large dataset');
+      this.userSimilarityMatrix = new Map(); // Use Map instead of full matrix
+      
+      for (let i = 0; i < numUsers; i++) {
+        this.userSimilarityMatrix.set(`${i}-${i}`, 1.0); // Diagonal elements
+        
+        // Only compute similarities for top-k similar users
+        const similarities = [];
+        for (let j = 0; j < numUsers; j++) {
+          if (i !== j) {
+            const similarity = this.cosineSimilarity(
+              this.userItemMatrix.getRow(i),
+              this.userItemMatrix.getRow(j)
+            );
+            if (similarity > 0.1) { // Only store significant similarities
+              similarities.push({ user: j, similarity });
+            }
+          }
+        }
+        
+        // Store only top 50 most similar users
+        similarities
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 50)
+          .forEach(({ user, similarity }) => {
+            this.userSimilarityMatrix.set(`${i}-${user}`, similarity);
+            this.userSimilarityMatrix.set(`${user}-${i}`, similarity);
+          });
+        
+        if (i % 100 === 0) {
+          console.log(`   Processed ${i}/${numUsers} users`);
+          this.performMemoryCleanup();
+        }
+      }
+    } else {
+      // Use full matrix for smaller datasets
+      this.userSimilarityMatrix = new Matrix(numUsers, numUsers);
+      
+      for (let i = 0; i < numUsers; i++) {
+        for (let j = i; j < numUsers; j++) {
+          if (i === j) {
+            this.userSimilarityMatrix.set(i, j, 1.0);
+          } else {
+            const similarity = this.cosineSimilarity(
+              this.userItemMatrix.getRow(i),
+              this.userItemMatrix.getRow(j)
+            );
+            this.userSimilarityMatrix.set(i, j, similarity);
+            this.userSimilarityMatrix.set(j, i, similarity);
+          }
+        }
+        
+        if (i % 50 === 0) {
+          this.performMemoryCleanup();
         }
       }
     }
+    
+    console.log('✅ User similarity computation completed');
   }
 
   async computeItemSimilarity() {
-    // Initialize TF-IDF and compute feature vectors
+    console.log('🔗 Computing item similarity with memory optimization...');
+    
+    // Limit products to prevent memory overflow
+    const products = await Product.find()
+      .select('_id description featureVector category brand outfitTags')
+      .limit(MAX_PRODUCTS)
+      .sort({ rating: -1 });
+    
+    console.log(`📊 Processing ${products.length} products for similarity`);
+    
+    // Initialize TF-IDF with limited vocabulary
     const tfidf = new TfIdf();
-    const products = await Product.find().select('_id description featureVector category brand outfitTags');
     
-    // Add product descriptions to TF-IDF
-    products.forEach(p => tfidf.addDocument(p.description || ''));
+    // Add product descriptions to TF-IDF in batches
+    for (let i = 0; i < products.length; i += BATCH_SIZE) {
+      const batch = products.slice(i, i + BATCH_SIZE);
+      batch.forEach(p => tfidf.addDocument(p.description || ''));
+    }
     
-    // Save TF-IDF vectors to products
-    for (let i = 0; i < products.length; i++) {
-      const vector = [];
-      tfidf.tfidfs(products[i].description || '', (j, measure) => vector.push(measure));
-      await Product.findByIdAndUpdate(products[i]._id, { featureVector: vector });
+    // Process products in batches to update feature vectors
+    for (let i = 0; i < products.length; i += BATCH_SIZE) {
+      const batch = products.slice(i, i + BATCH_SIZE);
       
-      // Update the products array with new feature vectors
-      products[i].featureVector = vector;
+      for (const product of batch) {
+        const vector = [];
+        tfidf.tfidfs(product.description || '', (j, measure) => vector.push(measure));
+        
+        // Only update if vector is meaningful
+        if (vector.length > 0) {
+          await Product.findByIdAndUpdate(product._id, { featureVector: vector });
+          product.featureVector = vector;
+        }
+      }
+      
+      if (i % MEMORY_CLEANUP_INTERVAL === 0) {
+        this.performMemoryCleanup();
+      }
     }
     
     const numItems = products.length;
-    this.itemSimilarityMatrix = new Matrix(numItems, numItems);
     
-    for (let i = 0; i < numItems; i++) {
-      for (let j = i; j < numItems; j++) {
-        if (i === j) {
-          this.itemSimilarityMatrix.set(i, j, 1.0);
-        } else {
-          const product1 = products[i];
-          const product2 = products[j];
-          
-          const contentSimilarity = this.computeContentSimilarity(product1, product2);
-          const categorySimilarity = product1.category === product2.category ? 0.3 : 0;
-          const brandSimilarity = product1.brand === product2.brand ? 0.2 : 0;
-          const tagSimilarity = this.computeTagSimilarity(product1.outfitTags || [], product2.outfitTags || []);
-          
-          const totalSimilarity = contentSimilarity + categorySimilarity + brandSimilarity + tagSimilarity;
-          
-          this.itemSimilarityMatrix.set(i, j, Math.min(totalSimilarity, 1.0));
-          this.itemSimilarityMatrix.set(j, i, Math.min(totalSimilarity, 1.0));
+    // Use sparse matrix for large datasets
+    if (numItems > 1000) {
+      console.log('📊 Using sparse item similarity computation');
+      this.itemSimilarityMatrix = new Map();
+      
+      for (let i = 0; i < numItems; i++) {
+        this.itemSimilarityMatrix.set(`${i}-${i}`, 1.0);
+        
+        const similarities = [];
+        for (let j = 0; j < numItems; j++) {
+          if (i !== j) {
+            const product1 = products[i];
+            const product2 = products[j];
+            
+            const contentSimilarity = this.computeContentSimilarity(product1, product2);
+            const categorySimilarity = product1.category === product2.category ? 0.3 : 0;
+            const brandSimilarity = product1.brand === product2.brand ? 0.2 : 0;
+            const tagSimilarity = this.computeTagSimilarity(product1.outfitTags || [], product2.outfitTags || []);
+            
+            const totalSimilarity = contentSimilarity + categorySimilarity + brandSimilarity + tagSimilarity;
+            
+            if (totalSimilarity > 0.1) {
+              similarities.push({ item: j, similarity: Math.min(totalSimilarity, 1.0) });
+            }
+          }
+        }
+        
+        // Store only top 30 most similar items
+        similarities
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, 30)
+          .forEach(({ item, similarity }) => {
+            this.itemSimilarityMatrix.set(`${i}-${item}`, similarity);
+            this.itemSimilarityMatrix.set(`${item}-${i}`, similarity);
+          });
+        
+        if (i % 100 === 0) {
+          console.log(`   Processed ${i}/${numItems} items`);
+          this.performMemoryCleanup();
+        }
+      }
+    } else {
+      // Use full matrix for smaller datasets
+      this.itemSimilarityMatrix = new Matrix(numItems, numItems);
+      
+      for (let i = 0; i < numItems; i++) {
+        for (let j = i; j < numItems; j++) {
+          if (i === j) {
+            this.itemSimilarityMatrix.set(i, j, 1.0);
+          } else {
+            const product1 = products[i];
+            const product2 = products[j];
+            
+            const contentSimilarity = this.computeContentSimilarity(product1, product2);
+            const categorySimilarity = product1.category === product2.category ? 0.3 : 0;
+            const brandSimilarity = product1.brand === product2.brand ? 0.2 : 0;
+            const tagSimilarity = this.computeTagSimilarity(product1.outfitTags || [], product2.outfitTags || []);
+            
+            const totalSimilarity = contentSimilarity + categorySimilarity + brandSimilarity + tagSimilarity;
+            
+            this.itemSimilarityMatrix.set(i, j, Math.min(totalSimilarity, 1.0));
+            this.itemSimilarityMatrix.set(j, i, Math.min(totalSimilarity, 1.0));
+          }
+        }
+        
+        if (i % 50 === 0) {
+          this.performMemoryCleanup();
         }
       }
     }
+    
+    console.log('✅ Item similarity computation completed');
   }
 
   computeContentSimilarity(product1, product2) {
@@ -259,18 +419,34 @@ class HybridRecommender {
   }
 
   computeCollaborativeScore(userIndex, itemIndex) {
-    const userSimilarities = this.userSimilarityMatrix.getRow(userIndex);
-    const userRatings = this.userItemMatrix.getColumn(itemIndex);
-    
     let weightedSum = 0;
     let similaritySum = 0;
     
-    for (let i = 0; i < userSimilarities.length; i++) {
-      if (i !== userIndex && userRatings[i] > 0) {
-        const similarity = userSimilarities[i];
-        if (similarity > 0.1) {
-          weightedSum += similarity * userRatings[i];
-          similaritySum += Math.abs(similarity);
+    if (this.userSimilarityMatrix instanceof Map) {
+      // Sparse matrix approach
+      const userRatings = this.userItemMatrix.getColumn(itemIndex);
+      
+      for (let i = 0; i < userRatings.length; i++) {
+        if (i !== userIndex && userRatings[i] > 0) {
+          const similarity = this.userSimilarityMatrix.get(`${userIndex}-${i}`) || 0;
+          if (similarity > 0.1) {
+            weightedSum += similarity * userRatings[i];
+            similaritySum += Math.abs(similarity);
+          }
+        }
+      }
+    } else {
+      // Full matrix approach
+      const userSimilarities = this.userSimilarityMatrix.getRow(userIndex);
+      const userRatings = this.userItemMatrix.getColumn(itemIndex);
+      
+      for (let i = 0; i < userSimilarities.length; i++) {
+        if (i !== userIndex && userRatings[i] > 0) {
+          const similarity = userSimilarities[i];
+          if (similarity > 0.1) {
+            weightedSum += similarity * userRatings[i];
+            similaritySum += Math.abs(similarity);
+          }
         }
       }
     }
@@ -336,22 +512,35 @@ class HybridRecommender {
   }
 
   async getPersonalizedProducts(user, k) {
+    console.log('🎯 Getting personalized products with memory optimization...');
+    
     const userCategories = new Set();
     const userBrands = new Set();
     const userStyles = new Set();
     const userColors = new Set();
     
-    for (const interaction of user.interactionHistory) {
-      const product = await Product.findById(interaction.productId).select('category brand outfitTags colors');
-      if (product) {
-        userCategories.add(product.category);
-        userBrands.add(product.brand);
-        if (product.outfitTags) {
-          product.outfitTags.forEach(tag => userStyles.add(tag));
+    // Process interactions in batches to prevent memory overflow
+    const batchSize = 50;
+    for (let i = 0; i < user.interactionHistory.length; i += batchSize) {
+      const batch = user.interactionHistory.slice(i, i + batchSize);
+      
+      for (const interaction of batch) {
+        const product = await Product.findById(interaction.productId).select('category brand outfitTags colors');
+        if (product) {
+          userCategories.add(product.category);
+          userBrands.add(product.brand);
+          if (product.outfitTags) {
+            product.outfitTags.forEach(tag => userStyles.add(tag));
+          }
+          if (product.colors) {
+            product.colors.forEach(color => userColors.add(color.name.toLowerCase()));
+          }
         }
-        if (product.colors) {
-          product.colors.forEach(color => userColors.add(color.name.toLowerCase()));
-        }
+      }
+      
+      // Memory cleanup after each batch
+      if (i % MEMORY_CLEANUP_INTERVAL === 0) {
+        this.performMemoryCleanup();
       }
     }
     
@@ -369,19 +558,22 @@ class HybridRecommender {
       query.outfitTags = { $in: Array.from(userStyles) };
     }
     
+    // Limit results to prevent memory overflow
     const personalizedProducts = await Product.find(query)
       .select('_id name images price category brand outfitTags colors featureVector')
-      .limit(k * 2);
+      .limit(Math.min(k * 2, 200)) // Cap at 200 products
+      .sort({ rating: -1 });
     
     if (personalizedProducts.length < k) {
       const popularProducts = await Product.find({ _id: { $nin: personalizedProducts.map(p => p._id) } })
         .select('_id name images price category brand outfitTags colors featureVector')
         .sort({ rating: -1, numReviews: -1 })
-        .limit(k - personalizedProducts.length);
+        .limit(Math.min(k - personalizedProducts.length, 100)); // Cap at 100 additional products
       
       personalizedProducts.push(...popularProducts);
     }
     
+    console.log(`✅ Retrieved ${personalizedProducts.length} personalized products`);
     return personalizedProducts;
   }
 
@@ -604,6 +796,71 @@ class HybridRecommender {
     }
     this.cfWeight = cfWeight;
     this.cbWeight = cbWeight;
+  }
+
+  // Memory management methods
+  performMemoryCleanup() {
+    this.memoryStats.operationsCount++;
+    
+    // Force garbage collection if available
+    if (global.gc) {
+      global.gc();
+    }
+    
+    // Update memory stats
+    const memUsage = process.memoryUsage();
+    this.memoryStats.currentMemory = memUsage.heapUsed;
+    this.memoryStats.peakMemory = Math.max(this.memoryStats.peakMemory, memUsage.heapUsed);
+    
+    // Log memory usage every 100 operations
+    if (this.memoryStats.operationsCount % 100 === 0) {
+      console.log(`🧹 Memory cleanup - Current: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, Peak: ${Math.round(this.memoryStats.peakMemory / 1024 / 1024)}MB`);
+    }
+  }
+
+  // Method to clear large data structures
+  clearMemory() {
+    console.log('🧹 Clearing memory...');
+    
+    if (this.userItemMatrix) {
+      this.userItemMatrix = null;
+    }
+    
+    if (this.userSimilarityMatrix) {
+      if (this.userSimilarityMatrix instanceof Map) {
+        this.userSimilarityMatrix.clear();
+      }
+      this.userSimilarityMatrix = null;
+    }
+    
+    if (this.itemSimilarityMatrix) {
+      if (this.itemSimilarityMatrix instanceof Map) {
+        this.itemSimilarityMatrix.clear();
+      }
+      this.itemSimilarityMatrix = null;
+    }
+    
+    this.userIndexMap.clear();
+    this.itemIndexMap.clear();
+    
+    // Force garbage collection
+    if (global.gc) {
+      global.gc();
+    }
+    
+    console.log('✅ Memory cleared successfully');
+  }
+
+  // Method to get memory statistics
+  getMemoryStats() {
+    const memUsage = process.memoryUsage();
+    return {
+      ...this.memoryStats,
+      currentHeapUsed: memUsage.heapUsed,
+      currentHeapTotal: memUsage.heapTotal,
+      external: memUsage.external,
+      rss: memUsage.rss
+    };
   }
 }
 

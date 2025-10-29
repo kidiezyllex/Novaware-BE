@@ -23,10 +23,23 @@ import { protect, checkAdmin } from '../middlewares/authMiddleware.js';
  * @swagger
  * /orders/myorders:
  *   get:
- *     summary: Get user's orders
+ *     summary: Lấy đơn hàng của người dùng
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of orders per page
  *     responses:
  *       200:
  *         description: User orders retrieved successfully
@@ -51,7 +64,7 @@ router.route('/myorders').get(protect, getMyOrders);
  * @swagger
  * /orders:
  *   post:
- *     summary: Create a new order
+ *     summary: Tạo đơn hàng mới
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
@@ -80,10 +93,28 @@ router.route('/myorders').get(protect, getMyOrders);
  *         description: Bad request
  *         $ref: '#/components/responses/ValidationError'
  *   get:
- *     summary: Get all orders (Admin only)
+ *     summary: Lấy tất cả đơn hàng (chỉ Admin)
  *     tags: [Orders]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of orders per page
+ *       - in: query
+ *         name: keyword
+ *         schema:
+ *           type: string
+ *         description: Search by order ID
  *     responses:
  *       200:
  *         description: Orders retrieved successfully

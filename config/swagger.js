@@ -549,6 +549,30 @@ const options = {
               }
             }
           }
+        },
+        ErrorResponse: {
+          description: 'Internal server error',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: {
+                    type: 'boolean',
+                    example: false
+                  },
+                  message: {
+                    type: 'string',
+                    example: 'Internal server error'
+                  },
+                  error: {
+                    type: 'string',
+                    description: 'Error details'
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

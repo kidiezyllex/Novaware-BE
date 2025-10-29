@@ -20,9 +20,27 @@ const router = express.Router();
  * @swagger
  * /content-sections:
  *   get:
- *     summary: Get all content sections
+ *     summary: Lấy tất cả phần nội dung
  *     description: Retrieve all content sections
  *     tags: [Content Sections]
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Filter by content section type
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of content sections per page
  *     responses:
  *       200:
  *         description: Content sections retrieved successfully
@@ -38,7 +56,7 @@ const router = express.Router();
  *                   items:
  *                     $ref: '#/components/schemas/ContentSection'
  *   post:
- *     summary: Create a new content section (Admin only)
+ *     summary: Tạo phần nội dung mới (chỉ Admin)
  *     description: Create a new content section
  *     tags: [Content Sections]
  *     security:
@@ -75,7 +93,7 @@ const router = express.Router();
  * @swagger
  * /content-sections/{id}:
  *   put:
- *     summary: Update content section (Admin only)
+ *     summary: Cập nhật phần nội dung (chỉ Admin)
  *     description: Update an existing content section
  *     tags: [Content Sections]
  *     security:
@@ -114,7 +132,7 @@ const router = express.Router();
  *         description: Content section not found
  *         $ref: '#/components/responses/NotFoundError'
  *   delete:
- *     summary: Delete content section (Admin only)
+ *     summary: Xóa phần nội dung (chỉ Admin)
  *     description: Delete a content section
  *     tags: [Content Sections]
  *     security:

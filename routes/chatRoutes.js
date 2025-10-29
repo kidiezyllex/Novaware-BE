@@ -15,11 +15,24 @@ const router = express.Router();
  * @swagger
  * /chats:
  *   get:
- *     summary: Get all chats (Admin only)
+ *     summary: Lấy tất cả cuộc trò chuyện (chỉ Admin)
  *     description: Retrieve all chat conversations for admin review
  *     tags: [Chats]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: pageNumber
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: perPage
+ *         schema:
+ *           type: integer
+ *           default: 9
+ *         description: Number of chats per page
  *     responses:
  *       200:
  *         description: All chats retrieved successfully
@@ -45,7 +58,7 @@ const router = express.Router();
  * @swagger
  * /chats/{userId}:
  *   get:
- *     summary: Get user's chat messages
+ *     summary: Lấy tin nhắn của người dùng
  *     description: Retrieve all chat messages for a specific user
  *     tags: [Chats]
  *     security:
@@ -78,7 +91,7 @@ const router = express.Router();
  *         description: User not found
  *         $ref: '#/components/responses/NotFoundError'
  *   post:
- *     summary: Send a message to user
+ *     summary: Gửi tin nhắn đến người dùng
  *     description: Send a new message to a specific user
  *     tags: [Chats]
  *     security:

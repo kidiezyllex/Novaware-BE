@@ -7,11 +7,26 @@ import { sendSuccess, sendError, sendValidationError, sendNotFound } from "../ut
 // @route   GET /api/categories
 // @access  Public
 const getCategories = asyncHandler(async (req, res) => {
-  const categories = await Category.find({});
-  sendSuccess(res, 200, "Categories retrieved successfully", { categories });
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
+  const count = await Category.countDocuments({});
+  const categories = await Category.find({})
+    .limit(perPage)
+    .skip(perPage * (page - 1));
+    
+  sendSuccess(res, 200, "Categories retrieved successfully", { 
+    categories, 
+    page, 
+    pages: Math.ceil(count / perPage), 
+    count 
+  });
 });
 
 const getCategoryCounts = asyncHandler(async (req, res) => {
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
   const categories = await Category.find({});
   const categoryCounts = [];
 
@@ -22,8 +37,20 @@ const getCategoryCounts = asyncHandler(async (req, res) => {
       count: count,
     });
   }
+  
+  // Apply pagination to results
+  const totalCount = categoryCounts.length;
+  const paginatedCounts = categoryCounts.slice(
+    perPage * (page - 1), 
+    perPage * (page - 1) + perPage
+  );
 
-  sendSuccess(res, 200, "Category counts retrieved successfully", { categoryCounts });
+  sendSuccess(res, 200, "Category counts retrieved successfully", { 
+    categoryCounts: paginatedCounts, 
+    page, 
+    pages: Math.ceil(totalCount / perPage), 
+    count: totalCount 
+  });
 });
 
 const createCategory = asyncHandler(async (req, res) => {

@@ -58,8 +58,22 @@ export const sendMessage = asyncHandler(async (req, res) => {
 export const getAllChats = asyncHandler(async (req, res) => {
   if (req.user.isAdmin) {
     try {
-      const chats = await Chat.find({}).populate('user', 'name email');
-      sendSuccess(res, 200, "All chats retrieved successfully", { chats });
+      const perPage = parseInt(req.query.perPage) || 9;
+      const page = parseInt(req.query.pageNumber) || 1;
+      
+      const count = await Chat.countDocuments({});
+      const chats = await Chat.find({})
+        .populate('user', 'name email')
+        .limit(perPage)
+        .skip(perPage * (page - 1))
+        .sort({ updatedAt: -1 });
+        
+      sendSuccess(res, 200, "All chats retrieved successfully", { 
+        chats, 
+        page, 
+        pages: Math.ceil(count / perPage), 
+        count 
+      });
     } catch (error) {
       sendError(res, 500, 'Server error while fetching all chats');
     }

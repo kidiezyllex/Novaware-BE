@@ -333,11 +333,27 @@ const updateOrderToPaid = asyncHandler(async (req, res) => {
 });
 
 const getMyOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ user: req.user._id });
-  sendSuccess(res, 200, "User orders retrieved successfully", { orders });
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
+  const count = await Order.countDocuments({ user: req.user._id });
+  const orders = await Order.find({ user: req.user._id })
+    .limit(perPage)
+    .skip(perPage * (page - 1))
+    .sort({ createdAt: -1 });
+    
+  sendSuccess(res, 200, "User orders retrieved successfully", { 
+    orders, 
+    page, 
+    pages: Math.ceil(count / perPage), 
+    count 
+  });
 });
 
 const getOrders = asyncHandler(async (req, res) => {
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
   let keyword = {};
 
   if (req.query.keyword) {
@@ -352,10 +368,20 @@ const getOrders = asyncHandler(async (req, res) => {
       }
     }
   }
+  
+  const count = await Order.countDocuments({ ...keyword });
   const orders = await Order.find({ ...keyword })
     .populate("user", "id name")
-    .sort({ createdAt: -1 });
-  sendSuccess(res, 200, "Orders retrieved successfully", { orders });
+    .sort({ createdAt: -1 })
+    .limit(perPage)
+    .skip(perPage * (page - 1));
+    
+  sendSuccess(res, 200, "Orders retrieved successfully", { 
+    orders, 
+    page, 
+    pages: Math.ceil(count / perPage), 
+    count 
+  });
 });
 
 const updateOrderToDelivered = asyncHandler(async (req, res) => {

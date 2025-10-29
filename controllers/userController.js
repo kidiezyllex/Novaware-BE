@@ -112,8 +112,21 @@ const updateUserProfile = asyncHandler(async (req, res) => {
 
 
 const getUsers = asyncHandler(async (req, res) => {
-  const users = await User.find({});
-  sendSuccess(res, 200, "Users retrieved successfully", { users });
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
+  const count = await User.countDocuments({});
+  const users = await User.find({})
+    .select('-password')
+    .limit(perPage)
+    .skip(perPage * (page - 1));
+    
+  sendSuccess(res, 200, "Users retrieved successfully", { 
+    users, 
+    page, 
+    pages: Math.ceil(count / perPage), 
+    count 
+  });
 });
 
 const deleteUser = asyncHandler(async (req, res) => {
@@ -302,13 +315,33 @@ const removeFromFavorites = asyncHandler(async (req, res) => {
 });
 
 const getFavorites = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.userId).populate("favorites");
-
-  if (user) {
-    sendSuccess(res, 200, "Favorites retrieved successfully", { favorites: user.favorites });
-  } else {
+  const perPage = parseInt(req.query.perPage) || 9;
+  const page = parseInt(req.query.pageNumber) || 1;
+  
+  const user = await User.findById(req.params.userId);
+  
+  if (!user) {
     sendNotFound(res, "User not found");
+    return;
   }
+  
+  const count = user.favorites.length;
+  const favorites = await User.findById(req.params.userId)
+    .populate({
+      path: "favorites",
+      options: {
+        limit: perPage,
+        skip: perPage * (page - 1)
+      }
+    })
+    .select("favorites");
+
+  sendSuccess(res, 200, "Favorites retrieved successfully", { 
+    favorites: favorites.favorites, 
+    page, 
+    pages: Math.ceil(count / perPage), 
+    count 
+  });
 });
 
 // Check if user has purchase history
@@ -362,6 +395,95 @@ const checkHasStylePreference = asyncHandler(async (req, res) => {
   });
 });
 
+// Get users for testing models (Personalization and Outfit Suggestions)
+const getUsersForTesting = asyncHandler(async (req, res) => {
+  const { type, pageNumber = 1, perPage = 9 } = req.query; // 'personalization' hoặc 'outfit-suggestions'
+  
+  if (!type || !['personalization', 'outfit-suggestions'].includes(type)) {
+    sendValidationError(res, "Type parameter is required and must be 'personalization' or 'outfit-suggestions'");
+    return;
+  }
+
+  const page = parseInt(pageNumber);
+  const limit = parseInt(perPage);
+  const skip = limit * (page - 1);
+
+  let users = [];
+  let totalCount = 0;
+
+  if (type === 'personalization') {
+    // Điều kiện: User có ít nhất 1 interaction trong interactionHistory
+    totalCount = await User.countDocuments({
+      'interactionHistory.0': { $exists: true }
+    });
+
+    users = await User.find({
+      'interactionHistory.0': { $exists: true }
+    })
+    .select('_id name email interactionHistory.length')
+    .limit(limit)
+    .skip(skip);
+  } else if (type === 'outfit-suggestions') {
+    // Điều kiện: Có sản phẩm thuộc ít nhất 2 category: Tops, Bottoms, Dresses, Shoes, Accessories
+    const targetCategories = ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'];
+    
+    // Lấy tất cả users có interactionHistory
+    const usersWithInteractions = await User.find({
+      'interactionHistory.0': { $exists: true }
+    }).populate({
+      path: 'interactionHistory.productId',
+      select: 'category',
+      match: { category: { $in: targetCategories } }
+    });
+
+    // Lọc users có sản phẩm từ ít nhất 2 categories khác nhau
+    const filteredUsers = usersWithInteractions.filter(user => {
+      const categories = new Set();
+      user.interactionHistory.forEach(interaction => {
+        if (interaction.productId && interaction.productId.category) {
+          categories.add(interaction.productId.category);
+        }
+      });
+      return categories.size >= 2;
+    });
+
+    totalCount = filteredUsers.length;
+    
+    // Áp dụng phân trang
+    users = filteredUsers
+      .slice(skip, skip + limit)
+      .map(user => ({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        interactionCount: user.interactionHistory.length,
+        categories: [...new Set(user.interactionHistory
+          .filter(i => i.productId && i.productId.category)
+          .map(i => i.productId.category))]
+      }));
+  }
+
+  sendSuccess(res, 200, `Users for ${type} testing retrieved successfully`, {
+    type,
+    users: users.map(user => ({
+      userId: user._id,
+      name: user.name,
+      email: user.email,
+      ...(type === 'personalization' && { interactionCount: user.interactionHistory?.length || 0 }),
+      ...(type === 'outfit-suggestions' && { 
+        interactionCount: user.interactionCount,
+        categories: user.categories 
+      })
+    })),
+    pagination: {
+      page,
+      pages: Math.ceil(totalCount / limit),
+      count: totalCount,
+      perPage: limit
+    }
+  });
+});
+
 export {
   authUser,
   getUserProfile,
@@ -380,4 +502,5 @@ export {
   checkHasPurchaseHistory,
   checkHasGender,
   checkHasStylePreference,
+  getUsersForTesting,
 };

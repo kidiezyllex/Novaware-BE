@@ -18,7 +18,7 @@ const router = express.Router();
  * @swagger
  * /upload:
  *   post:
- *     summary: Upload images
+ *     summary: Tải lên hình ảnh
  *     description: Upload multiple images to Cloudinary storage
  *     tags: [Upload]
  *     requestBody:

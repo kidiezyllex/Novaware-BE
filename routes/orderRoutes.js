@@ -58,7 +58,7 @@ import { protect, checkAdmin } from '../middlewares/authMiddleware.js';
  *         description: Unauthorized
  *         $ref: '#/components/responses/UnauthorizedError'
  */
-router.route('/myorders').get(protect, getMyOrders);
+router.route('/myorders').get(getMyOrders);
 
 /**
  * @swagger
@@ -138,8 +138,8 @@ router.route('/myorders').get(protect, getMyOrders);
 router
   .route('/')
   .post(protect, addOrderItems)
-  .get(protect, checkAdmin, getOrders);
-router.route('/:id').get(protect, getOrderById);
+  .get(getOrders);
+router.route('/:id').get(getOrderById);
 router.route('/:id/pay').put(protect, updateOrderToPaid);
 router.route('/:id/deliver').put(protect, checkAdmin, updateOrderToDelivered);
 router.route('/:id/cancel').put(protect, cancelOrder);

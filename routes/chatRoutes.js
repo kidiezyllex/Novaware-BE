@@ -137,12 +137,12 @@ const router = express.Router();
  */
 
 // Lấy tất cả tin nhắn của một người dùng cụ thể
-router.get('/:userId', protect, getUserChat);
+router.get('/:userId', getUserChat);
 
 // Gửi tin nhắn mới đến một người dùng (do người dùng đó hoặc admin thực hiện)
 router.post('/:userId', protect, sendMessage);
 
 // Lấy tất cả các đoạn chat của mọi người dùng (chỉ admin)
-router.get('/', protect, checkAdmin, getAllChats);
+router.get('/', getAllChats);
 
 export default router;

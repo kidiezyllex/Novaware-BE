@@ -6,13 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "start:memory": "node --max-old-space-size=4096 --expose-gc server.js",
-    "start:optimized": "node scripts/start-memory-optimized.js",
     "server": "nodemon server.js",
     "dev": "nodemon server.js",
-    "dev:memory": "nodemon --exec \"node --max-old-space-size=4096 --expose-gc server.js\"",
-    "monitor": "node utils/memoryMonitor.js",
-    "test:memory": "node scripts/test-memory-optimizations.js",
     "data:import": "node seeder.js",
     "data:destroy": "node seeder.js -d",
     "test": "echo \"Error: no test specified\" && exit 1"

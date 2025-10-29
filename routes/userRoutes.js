@@ -114,7 +114,7 @@ const router = express.Router();
  *       403:
  *         description: Forbidden
  */
-router.route('/').post(registerUser).get(protect, checkAdmin, getUsers);
+router.route('/').post(registerUser).get(getUsers);
 
 /**
  * @swagger
@@ -268,7 +268,7 @@ router.route('/:userId/favorites/:productId').delete(protect, removeFromFavorite
  *       404:
  *         description: User not found
  */
-router.route('/:userId/favorites').get(protect, getFavorites); 
+router.route('/:userId/favorites').get(getFavorites); 
 
 /**
  * @swagger
@@ -310,7 +310,7 @@ router.route('/:userId/favorites').get(protect, getFavorites);
  *       404:
  *         description: User not found
  */
-router.route('/:userId/check/purchase-history').get(protect, checkHasPurchaseHistory);
+router.route('/:userId/check/purchase-history').get(checkHasPurchaseHistory);
 
 /**
  * @swagger
@@ -354,7 +354,7 @@ router.route('/:userId/check/purchase-history').get(protect, checkHasPurchaseHis
  *       404:
  *         description: User not found
  */
-router.route('/:userId/check/gender').get(protect, checkHasGender);
+router.route('/:userId/check/gender').get(checkHasGender);
 
 /**
  * @swagger
@@ -398,7 +398,7 @@ router.route('/:userId/check/gender').get(protect, checkHasGender);
  *       404:
  *         description: User not found
  */
-router.route('/:userId/check/style-preference').get(protect, checkHasStylePreference);
+router.route('/:userId/check/style-preference').get(checkHasStylePreference);
 
 /**
  * @swagger
@@ -477,13 +477,13 @@ router.route('/testing').get(getUsersForTesting);
 
 router
   .route('/profile')
-  .get(protect, getUserProfile)
+  .get(getUserProfile)
   .put(protect, updateUserProfile);
 
 router
   .route('/:id')
   .delete(protect, checkAdmin, deleteUser)
-  .get(protect, checkAdmin, getUserById)
+  .get(getUserById)
   .put(protect, checkAdmin, updateUser);
 
 

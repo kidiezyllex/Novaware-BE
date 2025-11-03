@@ -82,3 +82,31 @@ export const deleteBrand = async (req, res) => {
     sendError(res, 500, "Unable to delete brand");
   }
 };
+
+// @desc    Get brands grouped by first letter (max 5 per letter)
+// @route   GET /api/brands/grouped
+// @access  Public
+export const getBrandsGrouped = async (req, res) => {
+  try {
+    const groups = await Brand.aggregate([
+      {
+        $addFields: {
+          firstLetter: { $toUpper: { $substrCP: ["$name", 0, 1] } },
+        },
+      },
+      { $sort: { firstLetter: 1, name: 1 } },
+      {
+        $group: {
+          _id: "$firstLetter",
+          brands: { $push: { _id: "$_id", name: "$name" } },
+        },
+      },
+      { $project: { _id: 0, letter: "$_id", brands: { $slice: ["$brands", 5] } } },
+      { $sort: { letter: 1 } },
+    ]);
+
+    sendSuccess(res, 200, "Brands grouped successfully", { groups });
+  } catch (error) {
+    sendError(res, 500, "Unable to group brands");
+  }
+};

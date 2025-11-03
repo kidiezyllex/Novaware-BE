@@ -4,6 +4,7 @@ import {
   createBrand,
   updateBrand,
   deleteBrand,
+  getBrandsGrouped,
 } from '../controllers/brandController.js';
 import { protect, checkAdmin } from '../middlewares/authMiddleware.js';
 
@@ -81,6 +82,39 @@ const router = express.Router();
 router.route('/')
   .get(getBrands)         
   .post(protect, checkAdmin, createBrand);  
+
+/**
+ * @swagger
+ * /brands/grouped:
+ *   get:
+ *     summary: Lấy danh sách thương hiệu theo chữ cái đầu tiên, mỗi chữ cái tối đa 5 brand
+ *     tags: [Brands]
+ *     responses:
+ *       200:
+ *         description: Brands grouped successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     groups:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           letter:
+ *                             type: string
+ *                           brands:
+ *                             type: array
+ *                             items:
+ *                               $ref: '#/components/schemas/Brand'
+ */
+router.get('/grouped', getBrandsGrouped);
 
 router.route('/:id')
   .put(protect, checkAdmin, updateBrand)    

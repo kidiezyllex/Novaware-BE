@@ -280,6 +280,27 @@ const resetPassword = asyncHandler(async (req, res) => {
   sendSuccess(res, 200, "Password updated successfully");
 });
 
+// Reset password directly by userId (no admin restriction) - for maintenance use
+const resetPasswordByUserId = asyncHandler(async (req, res) => {
+  const { userId, newPassword } = req.body;
+
+  if (!userId || !newPassword) {
+    sendValidationError(res, "userId and newPassword are required");
+    return;
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    sendNotFound(res, "User not found");
+    return;
+  }
+
+  user.password = newPassword; // will be hashed by model pre-save hook
+  await user.save();
+
+  sendSuccess(res, 200, "Password reset successfully");
+});
+
 const addToFavorites = asyncHandler(async (req, res) => {
   const { productId } = req.body;
   const user = await User.findById(req.params.userId);
@@ -496,6 +517,7 @@ export {
   forgotPassword,
   verifyCode,
   resetPassword,
+  resetPasswordByUserId,
   addToFavorites,
   removeFromFavorites,
   getFavorites,

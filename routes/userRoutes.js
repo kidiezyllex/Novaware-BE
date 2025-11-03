@@ -1,16 +1,11 @@
 import express from 'express';
 import {
-  authUser,
   getUserProfile,
-  registerUser,
   updateUserProfile,
   getUsers,
   deleteUser,
   getUserById,
   updateUser,
-  forgotPassword,
-  verifyCode,
-  resetPassword,
   addToFavorites,
   removeFromFavorites,
   getFavorites,
@@ -19,7 +14,7 @@ import {
   checkHasStylePreference,
   getUsersForTesting
 } from '../controllers/userController.js';
-import { protect, checkAdmin, protectResetPassword, } from '../middlewares/authMiddleware.js';
+import { protect, checkAdmin } from '../middlewares/authMiddleware.js';
 import passport from 'passport';
 import generateToken from '../utils/generateToken.js';
 
@@ -35,47 +30,6 @@ const router = express.Router();
 /**
  * @swagger
  * /users:
- *   post:
- *     summary: Đăng ký người dùng mới
- *     tags: [Users]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - name
- *               - email
- *               - password
- *             properties:
- *               name:
- *                 type: string
- *                 example: "John Doe"
- *               email:
- *                 type: string
- *                 format: email
- *                 example: "john@example.com"
- *               password:
- *                 type: string
- *                 example: "password123"
- *     responses:
- *       201:
- *         description: User created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 data:
- *                   $ref: '#/components/schemas/User'
- *       400:
- *         description: Bad request
- *         $ref: '#/components/responses/ValidationError'
- *       409:
- *         description: User already exists
  *   get:
  *     summary: Lấy danh sách tất cả người dùng (chỉ Admin)
  *     tags: [Users]
@@ -114,54 +68,9 @@ const router = express.Router();
  *       403:
  *         description: Forbidden
  */
-router.route('/').post(registerUser).get(getUsers);
+router.route('/').get(getUsers);
 
-/**
- * @swagger
- * /users/login:
- *   post:
- *     summary: Đăng nhập người dùng
- *     tags: [Users]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - email
- *               - password
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: "john@example.com"
- *               password:
- *                 type: string
- *                 example: "password123"
- *     responses:
- *       200:
- *         description: Successful login
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     token:
- *                       type: string
- *                     user:
- *                       $ref: '#/components/schemas/User'
- *       401:
- *         description: Invalid credentials
- *       400:
- *         description: Bad request
- */
-router.post('/login', authUser);
+// removed: moved to /auth/login
 
 //Google OAuth
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
@@ -206,9 +115,47 @@ router.get(
   }
 );
 
-router.post('/forgot-password', forgotPassword);
-router.post('/verify-code', verifyCode);
-router.put('/reset-password', protectResetPassword, resetPassword);
+// removed: moved to /auth/*
+
+/**
+ * @swagger
+ * /users/reset-password-by-user-id:
+ *   post:
+ *     summary: Đặt lại mật khẩu bằng userId (đã chuyển sang /auth/reset-password-by-user-id)
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *               - newPassword
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 example: "64f0c1b2e7b6a8c9d0123456"
+ *               newPassword:
+ *                 type: string
+ *                 example: "NewStrongPassword123!"
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Validation error
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         description: User not found
+ */
+// moved to /auth/reset-password-by-user-id
 
 router.route('/:userId/favorites').post(protect, addToFavorites); 
 router.route('/:userId/favorites/:productId').delete(protect, removeFromFavorites); 
@@ -480,6 +427,37 @@ router
   .get(getUserProfile)
   .put(protect, updateUserProfile);
 
+/**
+ * @swagger
+ * /users/{id}:
+ *   get:
+ *     summary: Lấy thông tin chi tiết một người dùng theo ID
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       $ref: '#/components/schemas/User'
+ *       404:
+ *         description: User not found
+ */
 router
   .route('/:id')
   .delete(protect, checkAdmin, deleteUser)

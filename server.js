@@ -17,6 +17,7 @@ import brandRoutes from "./routes/brandRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import contentSectionRoutes from "./routes/contentSectionRoutes.js";
@@ -117,6 +118,7 @@ const startServer = async () => {
     app.use("/api/brands", brandRoutes);
     app.use("/api/categories", categoryRoutes);
     app.use("/api/products", productRoutes);
+    app.use("/api/auth", authRoutes);
     app.use("/api/users", userRoutes);
     app.use("/api/orders", orderRoutes);
     app.use("/api/upload", uploadRoutes);

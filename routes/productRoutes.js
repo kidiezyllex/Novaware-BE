@@ -46,7 +46,7 @@ const router = express.Router();
  *         name: pageSize
  *         schema:
  *           type: integer
- *           default: 9
+ *           default: 20
  *         description: Number of products per page
  *     responses:
  *       200:

@@ -7,7 +7,7 @@ Detailed documentation for all API endpoints available in the system.
 
 ### 1.1. Register
 Method: POST
-Path: /api/users
+Path: /api/auth/register
 Access: Public
 Payload:
 ```json
@@ -32,7 +32,7 @@ Response:
 
 ### 1.2. Login
 Method: POST
-Path: /api/users/login
+Path: /api/auth/login
 Access: Public
 Payload:
 ```json
@@ -56,7 +56,7 @@ Response:
 ```
 ### 1.9. Forgot Password
 Method: POST
-Path: /api/users/forgot-password
+Path: /api/auth/forgot-password
 Access: Public
 Payload:
 ```json
@@ -73,7 +73,7 @@ Response:
 
 ### 1.10. Verify Code
 Method: POST
-Path: /api/users/verify-code
+Path: /api/auth/verify-code
 Access: Public
 Payload:
 ```json
@@ -94,7 +94,7 @@ Response:
 
 ### 1.11. Reset Password
 Method: PUT
-Path: /api/users/reset-password
+Path: /api/auth/reset-password
 Access: Private (Reset Token Required)
 Headers:
 ```
@@ -110,6 +110,24 @@ Response:
 ```json
 {
   "message": "Password updated successfully"
+}
+```
+
+### 1.11.5. Reset Password By User ID
+Method: POST
+Path: /api/auth/reset-password-by-user-id
+Access: Public
+Payload:
+```json
+{
+  "userId": "string",
+  "newPassword": "string"
+}
+```
+Response:
+```json
+{
+  "message": "Password reset successfully"
 }
 ```
 

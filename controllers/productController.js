@@ -31,7 +31,7 @@ const getProducts = asyncHandler(async (req, res) => {
       const products = await Product.find({}).maxTimeMS(30000);
       sendSuccess(res, 200, "All products retrieved successfully", { products });
     } else {
-      const perPage = parseInt(req.query.pageSize) || 9;
+      const perPage = Math.min(parseInt(req.query.pageSize) || 20, 20);
       const page = parseInt(req.query.pageNumber) || 1;
 
       const keyword = req.query.keyword
@@ -198,41 +198,31 @@ const createProductReview = asyncHandler(async (req, res) => {
 });
 
 const getTopProducts = asyncHandler(async (req, res) => {
-  const perPage = parseInt(req.query.perPage) || 9;
-  const page = parseInt(req.query.pageNumber) || 1;
-  const count = await Product.countDocuments({});
-  const products = await Product.find({})
-    .sort({ rating: -1 })
-    .limit(perPage)
-    .skip(perPage * (page - 1));
+  const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
+  const products = await Product.aggregate([
+    { $sample: { size: perPage } },
+  ]).allowDiskUse(true);
 
-  sendSuccess(res, 200, "Top products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Top products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
 
 const getLatestProducts = asyncHandler(async (req, res) => {
-  const perPage = parseInt(req.query.perPage) || 9;
-  const page = parseInt(req.query.pageNumber) || 1;
-  const count = await Product.countDocuments({});
+  const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
+  const products = await Product.aggregate([
+    { $sample: { size: perPage } },
+  ]).allowDiskUse(true);
 
-  const products = await Product.find({})
-    .sort({ createdAt: "desc" })
-    .limit(perPage)
-    .skip(perPage * (page - 1));
-
-  sendSuccess(res, 200, "Latest products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Latest products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
 
 const getSaleProducts = asyncHandler(async (req, res) => {
-  const perPage = parseInt(req.query.perPage) || 9;
-  const page = parseInt(req.query.pageNumber) || 1;
-  const count = await Product.countDocuments({ sale: { $gt: 0 } });
+  const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
+  const products = await Product.aggregate([
+    { $match: { sale: { $gt: 0 } } },
+    { $sample: { size: perPage } },
+  ]).allowDiskUse(true);
 
-  const products = await Product.find({ sale: { $gt: 0 } })
-    .sort({ sale: "desc" })
-    .limit(perPage)
-    .skip(perPage * (page - 1));
-
-  sendSuccess(res, 200, "Sale products retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
+  sendSuccess(res, 200, "Sale products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
 
 const getRelatedProducts = asyncHandler(async (req, res) => {
@@ -256,7 +246,7 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
 const getSortByPriceProducts = asyncHandler(async (req, res) => {
   const sortBy = req.query.sortBy || "asc";
 
-  const perPage = parseInt(req.query.perPage) || 9;
+  const perPage = Math.min(parseInt(req.query.perPage) || 20, 20);
   const page = parseInt(req.query.pageNumber) || 1;
   const skipCount = perPage * (page - 1);
   const count = await Product.countDocuments({});
@@ -287,7 +277,7 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
     { $sort: { priceSale: sortBy === "asc" ? 1 : -1 } },
     { $skip: skipCount },
     { $limit: perPage },
-  ]);
+  ]).allowDiskUse(true);
 
   sendSuccess(res, 200, "Products sorted by price retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
@@ -320,7 +310,7 @@ const recommendSizeForUser = asyncHandler(async (req, res) => {
 });
 
 const filterProducts = asyncHandler(async (req, res) => {
-  const perPage = parseInt(req.query.perPage) || 9;
+  const perPage = Math.min(parseInt(req.query.perPage) || 20, 20);
   const page = parseInt(req.query.pageNumber) || 1;
 
   let query = {};
@@ -342,7 +332,7 @@ const filterProducts = asyncHandler(async (req, res) => {
     query[sizeKey] = { $gt: 0 };
   }
 
-  const aggregationPipeline = [
+  const basePipeline = [
     {
       $addFields: {
         priceSale: {
@@ -353,9 +343,7 @@ const filterProducts = asyncHandler(async (req, res) => {
         },
       },
     },
-    {
-      $match: query,
-    },
+    { $match: query },
   ];
 
   // loc rating
@@ -374,7 +362,7 @@ const filterProducts = asyncHandler(async (req, res) => {
       maxRating = 0;
     }
 
-    aggregationPipeline.push({
+    basePipeline.push({
       $match: {
         rating: { $gte: minRating, $lt: maxRating },
       },
@@ -382,15 +370,16 @@ const filterProducts = asyncHandler(async (req, res) => {
   }
 
   if (req.query.priceMin) {
-    aggregationPipeline.push({
+    basePipeline.push({
       $match: { priceSale: { $gte: parseFloat(req.query.priceMin) } },
     });
   }
   if (req.query.priceMax) {
-    aggregationPipeline.push({
+    basePipeline.push({
       $match: { priceSale: { $lte: parseFloat(req.query.priceMax) } },
     });
   }
+
   let sortOption = { createdAt: -1 };
   if (req.query.sort_by === "latest") {
     sortOption = { createdAt: -1 };
@@ -403,15 +392,22 @@ const filterProducts = asyncHandler(async (req, res) => {
   } else if (req.query.sort_by === "priceDesc") {
     sortOption = { priceSale: -1 };
   }
-  aggregationPipeline.push({ $sort: sortOption });
-  aggregationPipeline.push(
+
+  const dataPipeline = [
+    ...basePipeline,
+    { $sort: sortOption },
     { $skip: perPage * (page - 1) },
-    { $limit: perPage }
-  );
-  const products = await Product.aggregate(aggregationPipeline);
-  const countQuery = await Product.aggregate([
-    ...aggregationPipeline.slice(0, -2),
+    { $limit: perPage },
+  ];
+
+  const countPipeline = [
+    ...basePipeline,
     { $count: "count" },
+  ];
+
+  const [products, countQuery] = await Promise.all([
+    Product.aggregate(dataPipeline).allowDiskUse(true),
+    Product.aggregate(countPipeline).allowDiskUse(true),
   ]);
 
   const totalCount = countQuery.length > 0 ? countQuery[0].count : 0;

@@ -1288,38 +1288,33 @@ Response:
 }
 ```
 
-### 9.3. Get Best Recommendations
+### 9.3. Get GNN Personalize (Bạn có thể thích)
 Method: GET
-Path: /api/recommend/best/:userId
+Path: /api/recommend/gnn/personalize/:userId
 Access: Public
 Query Parameters:
 - k: number (default: 9)
-- pageNumber: number (default: 1)
-- perPage: number (default: 9)
 Response:
 ```json
 {
   "success": true,
   "data": {
     "products": [],
-    "model": "string",
-    "timestamp": "date",
-    "pagination": {
-      "page": 1,
-      "pages": 10,
-      "count": 90,
-      "perPage": 9
-    }
+    "model": "GNN (GCN)",
+    "timestamp": "date"
   },
-  "message": "Best recommendations generated successfully"
+  "message": "Personalized recommendations generated successfully"
 }
 ```
+Notes:
+- Requires the user to have at least one interaction history entry.
 
-### 9.4. Get Outfit Recommendations
+### 9.4. Get GNN Outfit Perfect (Phối đồ hoàn hảo)
 Method: GET
-Path: /api/recommend/outfits/:userId
+Path: /api/recommend/gnn/outfit-perfect/:userId
 Access: Public
 Query Parameters:
+- productId: string (required)
 - k: number (default: 9)
 - pageNumber: number (default: 1)
 - perPage: number (default: 9)
@@ -1339,7 +1334,7 @@ Response:
         "description": "string"
       }
     ],
-    "model": "string",
+    "model": "GNN (GCN)",
     "timestamp": "date",
     "pagination": {
       "page": 1,
@@ -1351,6 +1346,9 @@ Response:
   "message": "Outfit recommendations generated successfully"
 }
 ```
+Notes:
+- Requires user.gender and at least one interaction in history.
+- The returned outfits always include the selected productId in their product list.
 
 ### 9.5. Get Similar Products
 Method: GET
@@ -1407,22 +1405,22 @@ Response:
 }
 ```
 
-### 9.7. Get Personalized Recommendations
-Method: GET
-Path: /api/recommend/personalized/:userId
+### 9.7. Train GNN Incremental
+Method: POST
+Path: /api/recommend/train/gnn-incremental
 Access: Public
-Query Parameters:
-- k: number (default: 9)
 Response:
 ```json
 {
   "success": true,
   "data": {
-    "products": [],
-    "userPreferences": {},
-    "count": "number"
+    "gnn": {
+      "trained": true,
+      "trainingTime": "string",
+      "mode": "incremental"
+    }
   },
-  "message": "Personalized recommendations generated successfully"
+  "message": "GNN incremental training done"
 }
 ```
 

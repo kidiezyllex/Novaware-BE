@@ -30,6 +30,19 @@ class GNNRecommender {
     };
   }
 
+  // --- Validation helpers ---
+  async ensureUserWithHistory(userId, { requireGender = false } = {}) {
+    const user = await User.findById(userId);
+    if (!user) throw new Error('User not found');
+    if (!user.interactionHistory || user.interactionHistory.length === 0) {
+      throw new Error('User has no interaction history');
+    }
+    if (requireGender && !user.gender) {
+      throw new Error('User gender is required');
+    }
+    return user;
+  }
+
   // GCN Layer
   gcnLayer(features, adj) {
     console.log('   🔧 Starting GCN layer computation...');
@@ -409,6 +422,106 @@ class GNNRecommender {
     await this.saveModel();
   }
 
+  // Incremental training for large datasets: counts first, then paginates
+  async trainIncremental() {
+    const now = Date.now();
+    if (this.isTrained && (now - this.lastTrainingTime) < this.trainingCacheTimeout) {
+      console.log('✅ Using cached GNN model');
+      return;
+    }
+
+    console.log('🚀 Starting incremental GNN training...');
+    const startTime = Date.now();
+
+    // Reset structures
+    this.userEmbeddings.clear();
+    this.productEmbeddings.clear();
+    this.adjList.clear();
+
+    // Count documents
+    const usersCount = await User.countDocuments({ 'interactionHistory.0': { $exists: true } });
+    const productsCount = await Product.countDocuments({});
+    console.log(`📊 Counts → users(with history): ${usersCount}, products: ${productsCount}`);
+
+    // Page through users
+    for (let skip = 0; skip < usersCount && skip < MAX_USERS_GNN; skip += BATCH_SIZE_GNN) {
+      const users = await User.find({ 'interactionHistory.0': { $exists: true } })
+        .select('_id interactionHistory')
+        .skip(skip)
+        .limit(BATCH_SIZE_GNN)
+        .lean();
+      for (const user of users) {
+        const userId = user._id.toString();
+        if (!this.adjList.has(userId)) this.adjList.set(userId, []);
+        for (const int of user.interactionHistory) {
+          const prodId = int.productId.toString();
+          this.adjList.get(userId).push(prodId);
+          if (!this.adjList.has(prodId)) this.adjList.set(prodId, []);
+        }
+      }
+      this.performMemoryCleanup();
+    }
+
+    // Page through products to add product-product edges
+    for (let skip = 0; skip < productsCount && skip < MAX_PRODUCTS_GNN; skip += BATCH_SIZE_GNN) {
+      const products = await Product.find()
+        .select('_id compatibleProducts')
+        .skip(skip)
+        .limit(BATCH_SIZE_GNN)
+        .lean();
+      for (const product of products) {
+        const prodId = product._id.toString();
+        if (!this.adjList.has(prodId)) this.adjList.set(prodId, []);
+        if (product.compatibleProducts) {
+          for (const compatId of product.compatibleProducts) {
+            const compatStr = compatId.toString();
+            this.adjList.get(prodId).push(compatStr);
+            if (!this.adjList.has(compatStr)) this.adjList.set(compatStr, []);
+            this.adjList.get(compatStr).push(prodId);
+          }
+        }
+      }
+      this.performMemoryCleanup();
+    }
+
+    // Initialize embeddings for nodes seen
+    const nodeIds = Array.from(this.adjList.keys());
+    for (let i = 0; i < nodeIds.length; i += BATCH_SIZE_GNN) {
+      const batch = nodeIds.slice(i, i + BATCH_SIZE_GNN);
+      for (const id of batch) {
+        const emb = tf.randomNormal([this.embeddingSize]);
+        if (id.startsWith('user')) {
+          this.userEmbeddings.set(id, emb);
+        } else {
+          this.productEmbeddings.set(id, emb);
+        }
+      }
+      this.performMemoryCleanup();
+    }
+
+    // Train with simplified approach and node sampling if too large
+    const n = nodeIds.length;
+    const maxNodes = MAX_NODES;
+    const usedNodeIds = n > maxNodes ? nodeIds.sort(() => 0.5 - Math.random()).slice(0, maxNodes) : nodeIds;
+
+    const features = tf.stack(
+      usedNodeIds.map(id => id.startsWith('user') ? this.userEmbeddings.get(id) : this.productEmbeddings.get(id))
+    );
+    const userIdx = usedNodeIds.filter(id => id.startsWith('user')).map(id => usedNodeIds.indexOf(id));
+    const prodIdx = usedNodeIds.filter(id => !id.startsWith('user')).map(id => usedNodeIds.indexOf(id));
+    if (userIdx.length > 0 && prodIdx.length > 0) {
+      const userEmb = tf.gather(features, userIdx);
+      const prodEmb = tf.gather(features, prodIdx);
+      const scores = tf.matMul(userEmb, prodEmb, false, true);
+      this.updateEmbeddingsFromScores(scores, userIdx, prodIdx, usedNodeIds);
+    }
+
+    this.isTrained = true;
+    this.lastTrainingTime = Date.now();
+    console.log(`🎉 Incremental GNN training done in ${Date.now() - startTime}ms`);
+    await this.saveModel();
+  }
+
   generateLabels(userIdx, prodIdx, nodeIds) {
     // Create labels based on interaction history
     const labels = tf.zeros([userIdx.length, prodIdx.length]);
@@ -703,10 +816,7 @@ class GNNRecommender {
     }
 
     console.log('👤 Fetching user data...');
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
+    const user = await this.ensureUserWithHistory(userId);
     console.log(`✅ User found: ${user.email || user._id}`);
 
     const userIdStr = userId.toString();
@@ -758,6 +868,159 @@ class GNNRecommender {
     console.log(`   🎯 Model used: GNN (GCN)`);
 
     return { products, outfits, model: 'GNN (GCN)' };
+  }
+
+  async recommendPersonalize(userId, k = 10) {
+    // Must have interaction history
+    const result = await this.recommend(userId, k);
+    return { products: result.products, model: result.model, timestamp: new Date().toISOString() };
+  }
+
+  async recommendOutfits(userId, { productId = null, k = 12 } = {}) {
+    // Must have gender and interaction history; and a selected seed product
+    const user = await this.ensureUserWithHistory(userId, { requireGender: true });
+    if (!productId) {
+      throw new Error('productId is required to build outfit');
+    }
+
+    if (!this.isTrained) {
+      const loaded = await this.loadModel();
+      if (!loaded) await this.train();
+    }
+
+    const userIdStr = userId.toString();
+    let userEmb = this.userEmbeddings.get(userIdStr);
+    if (!userEmb) {
+      userEmb = tf.randomNormal([this.embeddingSize]);
+      this.userEmbeddings.set(userIdStr, userEmb);
+    }
+
+    // Collect user history categories
+    const historyIds = (user.interactionHistory || []).map(i => i.productId);
+    const historyProducts = historyIds.length > 0 ? await Product.find({ _id: { $in: historyIds } }).select('_id category').lean() : [];
+    const preferredCategories = new Set(historyProducts.map(p => p.category));
+
+    // Compute scores across products
+    const scores = {};
+    for (const [pid, emb] of this.productEmbeddings) {
+      scores[pid] = tf.matMul(userEmb.reshape([1, -1]), emb.reshape([-1, 1])).dataSync()[0];
+    }
+    // Rank products
+    let rankedIds = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
+
+    // Gender filter
+    const gender = user.gender;
+    const genderAllow = gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+                      : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+                      : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+
+    // Pull product docs in chunks and filter
+    const candidates = await Product.find({ _id: { $in: rankedIds.slice(0, Math.max(k * 5, 50)) } }).lean();
+    let filtered = candidates.filter(p => genderAllow.has(p.category));
+    if (preferredCategories.size > 0) {
+      filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
+    }
+
+    // Use the required productId as seed and prioritize category-matching items
+    let seedProduct = await Product.findById(productId).lean();
+    if (seedProduct) {
+      filtered = [seedProduct, ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), ...filtered.filter(p => p.category !== seedProduct.category)];
+    }
+
+    const topProducts = filtered.slice(0, Math.max(k, 20));
+    const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
+    return { outfits, model: 'GNN (GCN)', timestamp: new Date().toISOString() };
+  }
+
+  calculateOutfitCompatibility(products) {
+    // Simple heuristic: prefer diverse categories and moderate total price
+    const categories = new Set(products.map(p => p.category));
+    const diversity = Math.min(1, categories.size / 3);
+    const total = products.reduce((s, p) => s + (p.price || 0), 0);
+    const priceScore = total > 0 ? Math.max(0, 1 - Math.abs(total - 200) / 400) : 0.5; // favor around 200
+    return Math.min(1, 0.6 * diversity + 0.4 * priceScore);
+  }
+
+  // Build outfits that must include the selected seed product
+  async generateOutfitsFromSeed(products, user, seedProduct, k = 12) {
+    const outfits = [];
+    const gender = user.gender || 'other';
+    if (!seedProduct) return outfits;
+
+    const isTop = (p) => p.category === 'Tops' || p.outfitTags?.includes('top') || p.outfitTags?.includes('shirt');
+    const isBottom = (p) => p.category === 'Bottoms' || p.outfitTags?.includes('bottom') || p.outfitTags?.includes('pants');
+    const isShoe = (p) => p.category === 'Shoes' || p.outfitTags?.includes('shoes');
+    const isDress = (p) => p.category === 'Dresses' || p.outfitTags?.includes('dress');
+    const isAccessory = (p) => p.category === 'Accessories' || p.outfitTags?.includes('accessory');
+
+    const pool = (predicate, excludeIds = new Set([seedProduct._id.toString()])) => {
+      return products.filter(p => predicate(p) && !excludeIds.has(p._id.toString()));
+    };
+
+    const pushOutfit = (parts, namePrefix, desc) => {
+      const unique = [];
+      const seen = new Set();
+      for (const p of parts) {
+        if (p && !seen.has(p._id.toString())) {
+          unique.push(p);
+          seen.add(p._id.toString());
+        }
+      }
+      if (unique.length >= 2) {
+        outfits.push({
+          name: `${namePrefix} ${outfits.length + 1}`,
+          products: unique,
+          style: user.preferences?.style || 'casual',
+          totalPrice: unique.reduce((s, p) => s + (p.price || 0), 0),
+          compatibilityScore: this.calculateOutfitCompatibility(unique),
+          gender,
+          description: desc
+        });
+      }
+    };
+
+    if (gender === 'male' || gender === 'other') {
+      // Aim for Top + Bottom + Shoes including seed
+      const seedAsTop = isTop(seedProduct);
+      const seedAsBottom = isBottom(seedProduct);
+      const seedAsShoes = isShoe(seedProduct);
+
+      for (let i = 0; i < Math.min(5, k); i++) {
+        const exclude = new Set([seedProduct._id.toString()]);
+        const top = seedAsTop ? seedProduct : pool(isTop, exclude)[Math.floor(Math.random() * Math.max(1, pool(isTop, exclude).length))];
+        if (top) exclude.add(top._id.toString());
+        const bottom = seedAsBottom ? seedProduct : pool(isBottom, exclude)[Math.floor(Math.random() * Math.max(1, pool(isBottom, exclude).length))];
+        if (bottom) exclude.add(bottom._id.toString());
+        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
+        pushOutfit([seedProduct, top, bottom, shoes], "Men's Outfit", 'Top + Bottom + Shoes');
+      }
+    }
+
+    if (gender === 'female') {
+      // Aim for Dress + Accessories + Shoes including seed
+      const seedAsDress = isDress(seedProduct);
+      const seedAsAcc = isAccessory(seedProduct);
+      const seedAsShoes = isShoe(seedProduct);
+
+      for (let i = 0; i < Math.min(5, k); i++) {
+        const exclude = new Set([seedProduct._id.toString()]);
+        const dress = seedAsDress ? seedProduct : pool(isDress, exclude)[Math.floor(Math.random() * Math.max(1, pool(isDress, exclude).length))];
+        if (dress) exclude.add(dress._id.toString());
+        const acc = seedAsAcc ? seedProduct : pool(isAccessory, exclude)[Math.floor(Math.random() * Math.max(1, pool(isAccessory, exclude).length))];
+        if (acc) exclude.add(acc._id.toString());
+        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
+        pushOutfit([seedProduct, dress, acc, shoes], "Women's Outfit", 'Dress + Accessories + Shoes');
+      }
+    }
+
+    // Deduplicate outfits by product sets
+    const seenKeys = new Set();
+    const deduped = [];
+    for (const o of outfits) {
+      const key = o.products.map(p => p._id.toString()).sort().join('|');
+      if (!seenKeys.has(key)) { seenKeys.add(key); deduped.push(o); }
+    }
+    return deduped.slice(0, k);
   }
 
   async generateOutfits(products, user) {

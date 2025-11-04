@@ -31,12 +31,45 @@ export const chatWithGemini = async (prompt, { modelName = "gemini-2.5-flash", g
       generationConfig,
       safetySettings: defaultSafetySettings,
     });
+    
     const response = result.response;
-    if (response && response.text()) return response.text();
-    throw new Error('Invalid or unexpected response format from Gemini API');
+    
+    if (!response) {
+      console.error('Gemini API response is null or undefined');
+      throw new Error('Invalid or unexpected response format from Gemini API: response is null');
+    }
+    
+    const candidates = response.candidates;
+    if (!candidates || candidates.length === 0) {
+      console.error('Gemini API: No candidates in response');
+      const finishReason = response.promptFeedback?.blockReason || 'UNKNOWN';
+      throw new Error(`Invalid or unexpected response format from Gemini API: No candidates. Block reason: ${finishReason}`);
+    }
+    
+    const firstCandidate = candidates[0];
+    if (firstCandidate.finishReason && firstCandidate.finishReason !== 'STOP') {
+      console.error(`Gemini API: Content blocked. Finish reason: ${firstCandidate.finishReason}`);
+      throw new Error(`Invalid or unexpected response format from Gemini API: Content blocked. Finish reason: ${firstCandidate.finishReason}`);
+    }
+    
+    try {
+      const text = response.text();
+      if (text && typeof text === 'string' && text.trim().length > 0) {
+        return text;
+      } else {
+        console.error('Gemini API: Empty or invalid text response');
+        throw new Error('Invalid or unexpected response format from Gemini API: Empty text response');
+      }
+    } catch (textError) {
+      console.error('Gemini API: Error calling response.text():', textError);
+      throw new Error(`Invalid or unexpected response format from Gemini API: ${textError.message}`);
+    }
   } catch (error) {
     console.error('Lỗi khi gọi Gemini API:', error);
-    throw new Error('Lỗi khi giao tiếp với Gemini API');
+    if (error.message && error.message.includes('Invalid or unexpected response format')) {
+      throw error;
+    }
+    throw new Error(`Lỗi khi giao tiếp với Gemini API: ${error.message}`);
   }
 };
 

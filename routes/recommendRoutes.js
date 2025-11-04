@@ -40,8 +40,6 @@ router.get('/gnn/personalize/:userId', asyncHandler(async (req, res) => {
   const { k = 9 } = req.query;
   try {
     const data = await gnnRecommender.recommendPersonalize(userId, parseInt(k));
-
-    // 生成解释（尽量不阻塞主流程，失败则忽略）
     let explanation = '';
     try {
       const user = await User.findById(userId).select('_id gender preferences').lean();

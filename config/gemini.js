@@ -65,7 +65,6 @@ export const explainRecommendations = async ({ user, products, systemPrompt }) =
     const text = await chatWithGemini(fullPrompt, { modelName: "gemini-2.5-flash" });
     return text;
   } catch (e) {
-    // 失败时返回为空字符串，避免阻塞主流程
     return "";
   }
 };

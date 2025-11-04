@@ -102,7 +102,17 @@ const productSchema = mongoose.Schema(
         name: { type: String, required: true },
         hexCode: { type: String, required: true },
       },
-    ],    // Tags cho outfit và styling
+    ],
+    // Variants theo tổ hợp color (hex) × size (mã ngắn)
+    variants: [
+      {
+        color: { type: String, required: true }, // ví dụ: "#eee"
+        size: { type: String, required: true },  // ví dụ: "sm", "md", "lg", "xl"
+        price: { type: Number, required: true },
+        stock: { type: Number, default: 0 },
+      },
+    ],
+    // Tags cho outfit và styling
     outfitTags: [String], // ['top', 'bottom', 'accessory', 'summer', 'casual']
     // Sản phẩm tương thích cho outfit matching
     compatibleProducts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
@@ -117,8 +127,13 @@ const productSchema = mongoose.Schema(
 productSchema.pre("save", function (next) {
   let totalCountInStock = 0;
 
-  // Tính tổng số lượng từ size
-  if (this.size) {
+  // Tính tổng số lượng từ variants (ưu tiên)
+  if (this.variants && this.variants.length > 0) {
+    totalCountInStock = this.variants.reduce((sum, variant) => {
+      return sum + (variant.stock || 0);
+    }, 0);
+  } else if (this.size) {
+    // Fallback to old size structure if variants not available
     totalCountInStock += this.size.s + this.size.m + this.size.l + this.size.xl;
   }
 

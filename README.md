@@ -1323,24 +1323,7 @@ Response:
 
 ## 10. Chatbot & AI
 
-### 10.1. Chat with Gemini
-Method: POST
-Path: /api/chatgemini
-Access: Public
-Payload:
-```json
-{
-  "prompt": "string"
-}
-```
-Response:
-```json
-{
-  "text": "string"
-}
-```
-
-### 10.2. Chat with Novaware (Wit.ai + Gemini)
+### 10.1. Chat with Novaware (Wit.ai)
 Method: POST
 Path: /api/chatnovaware
 Access: Public

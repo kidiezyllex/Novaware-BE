@@ -3,7 +3,6 @@ import asyncHandler from 'express-async-handler';
 import gnnRecommender from '../services/gnnRecommender.js';
 import hybridRecommender from '../services/hybridRecommender.js';
 import User from '../models/userModel.js';
-import chatWithGemini, { explainRecommendations, cleanTextForSpeech } from '../config/gemini.js';
 
 const router = express.Router();
 /**
@@ -40,15 +39,8 @@ router.get('/gnn/personalize/:userId', asyncHandler(async (req, res) => {
   const { k = 9 } = req.query;
   try {
     const data = await gnnRecommender.recommendPersonalize(userId, parseInt(k));
-    let explanation = '';
-    try {
-      const user = await User.findById(userId).select('_id gender preferences').lean();
-      explanation = await explainRecommendations({ user, products: data.products });
-    } catch (_) {}
 
-    const explanationSpeech = cleanTextForSpeech(explanation);
-
-    return res.json({ success: true, data: { ...data, explanation, explanationSpeech }, message: 'Personalized recommendations generated successfully' });
+    return res.json({ success: true, data: { ...data, explanation: '', explanationSpeech: '' }, message: 'Personalized recommendations generated successfully' });
   } catch (e) {
     return res.status(400).json({ success: false, message: e.message || 'User not eligible for personalize' });
   }

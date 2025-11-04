@@ -4,7 +4,6 @@ import { configureLoginAuth } from "./config/loginAuth.js";
 import { notFound, errorHandler } from "./middlewares/errorMiddleware.js";
 import { marked } from "marked";
 import { initSocket } from "./config/socket.js";
-import chatWithGemini from "./config/gemini.js";
 import path from "path";
 import express from "express";
 import dotenv from "dotenv";
@@ -78,17 +77,6 @@ const startServer = async () => {
       });
     }
 
-    app.post("/api/chatgemini", async (req, res) => {
-      try {
-        const { prompt } = req.body;
-        const responseText = await chatWithGemini(prompt);
-        const formattedResponse = marked(responseText);
-        res.json({ text: formattedResponse });
-      } catch (error) {
-        res.status(500).json({ error: "Failed to communicate with Gemini API" });
-      }
-    });
-
     app.post("/api/chatnovaware", async (req, res) => {
       try {
         const { prompt } = req.body;
@@ -107,11 +95,10 @@ const startServer = async () => {
             imageLinks: witAiResult.imageLinks || [],
           });
         } else {
-          const systemPrompt =
-            "I am integrating you into a clothing website. So imagine you are a sales person advising your customers on clothing and here is their question:";
-          const combinedPrompt = `${systemPrompt}\n\n${prompt}`;
-          const geminiResponse = await chatWithGemini(combinedPrompt);
-          return res.json({ text: geminiResponse });
+          // Fallback response when confidence is low
+          return res.json({ 
+            text: "Xin lỗi, tôi chưa hiểu rõ câu hỏi của bạn. Vui lòng thử lại với câu hỏi cụ thể hơn về sản phẩm hoặc dịch vụ của chúng tôi." 
+          });
         }
       } catch (error) {
         res.status(500).json({ error: "Failed to communicate with AI" });

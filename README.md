@@ -1234,34 +1234,22 @@ Response:
 
 ## 9. Recommendations
 
-### 9.1. Get GNN Recommendations
+### 9.1. Personalized Products (GNN)
 Method: GET
-Path: /api/recommend/gnn/:userId
+Path: /api/recommend/gnn/personalize/:userId
 Access: Public
 Query Parameters:
 - k: number (default: 9)
-- pageNumber: number (default: 1)
-- perPage: number (default: 9)
 Response:
 ```json
 {
   "success": true,
-  "data": {
-    "products": [],
-    "model": "string",
-    "timestamp": "date",
-    "pagination": {
-      "page": 1,
-      "pages": 10,
-      "count": 90,
-      "perPage": 9
-    }
-  },
-  "message": "GNN recommendations generated successfully"
+  "message": "Personalized recommendations generated successfully",
+  "data": []
 }
 ```
 
-### 9.2. Get Hybrid Recommendations
+### 9.2. Hybrid Recommendations
 Method: GET
 Path: /api/recommend/hybrid/:userId
 Access: Public
@@ -1273,43 +1261,20 @@ Response:
 ```json
 {
   "success": true,
+  "message": "Hybrid recommendations generated successfully",
   "data": {
     "products": [],
-    "model": "string",
-    "timestamp": "date",
     "pagination": {
       "page": 1,
       "pages": 10,
       "count": 90,
       "perPage": 9
     }
-  },
-  "message": "Hybrid recommendations generated successfully"
+  }
 }
 ```
 
-### 9.3. Get GNN Personalize (Bạn có thể thích)
-Method: GET
-Path: /api/recommend/gnn/personalize/:userId
-Access: Public
-Query Parameters:
-- k: number (default: 9)
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "products": [],
-    "model": "GNN (GCN)",
-    "timestamp": "date"
-  },
-  "message": "Personalized recommendations generated successfully"
-}
-```
-Notes:
-- Requires the user to have at least one interaction history entry.
-
-### 9.4. Get GNN Outfit Perfect (Phối đồ hoàn hảo)
+### 9.3. Outfit Perfect (GNN)
 Method: GET
 Path: /api/recommend/gnn/outfit-perfect/:userId
 Access: Public
@@ -1322,90 +1287,22 @@ Response:
 ```json
 {
   "success": true,
+  "message": "Outfit recommendations generated successfully",
   "data": {
-    "outfits": [
-      {
-        "name": "string",
-        "products": [],
-        "style": "string",
-        "totalPrice": "number",
-        "compatibilityScore": "number",
-        "gender": "string",
-        "description": "string"
-      }
-    ],
-    "model": "GNN (GCN)",
-    "timestamp": "date",
+    "outfits": [],
+    "model": "string",
+    "timestamp": "string",
     "pagination": {
       "page": 1,
       "pages": 10,
       "count": 90,
       "perPage": 9
     }
-  },
-  "message": "Outfit recommendations generated successfully"
-}
-```
-Notes:
-- Requires user.gender and at least one interaction in history.
-- The returned outfits always include the selected productId in their product list.
-
-### 9.5. Get Similar Products
-Method: GET
-Path: /api/recommend/similar/:productId
-Access: Public
-Query Parameters:
-- k: number (default: 9)
-- pageNumber: number (default: 1)
-- perPage: number (default: 9)
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "originalProduct": {},
-    "similarProducts": [],
-    "count": "number",
-    "pagination": {
-      "page": 1,
-      "pages": 10,
-      "totalCount": 90,
-      "perPage": 9
-    }
-  },
-  "message": "Similar products found successfully"
+  }
 }
 ```
 
-### 9.6. Get Trending Products
-Method: GET
-Path: /api/recommend/trending
-Access: Public
-Query Parameters:
-- k: number (default: 9)
-- days: number (default: 30)
-- pageNumber: number (default: 1)
-- perPage: number (default: 9)
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "trendingProducts": [],
-    "period": "string",
-    "count": "number",
-    "pagination": {
-      "page": 1,
-      "pages": 10,
-      "totalCount": 90,
-      "perPage": 9
-    }
-  },
-  "message": "Trending products retrieved successfully"
-}
-```
-
-### 9.7. Train GNN Incremental
+### 9.4. Train GNN (Incremental)
 Method: POST
 Path: /api/recommend/train/gnn-incremental
 Access: Public
@@ -1413,36 +1310,14 @@ Response:
 ```json
 {
   "success": true,
+  "message": "GNN incremental training done",
   "data": {
     "gnn": {
       "trained": true,
-      "trainingTime": "string",
+      "trainingTime": "12.34s",
       "mode": "incremental"
     }
-  },
-  "message": "GNN incremental training done"
-}
-```
-
-### 9.8. Train Recommendation Models
-Method: POST
-Path: /api/recommend/train
-Access: Public
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "gnn": {
-      "trained": true,
-      "trainingTime": "string"
-    },
-    "hybrid": {
-      "trained": true,
-      "trainingTime": "string"
-    }
-  },
-  "message": "Models trained successfully"
+  }
 }
 ```
 

@@ -1,9 +1,9 @@
 {
   "isTrained": true,
-  "lastTrainingTime": 1762255810666,
+  "lastTrainingTime": 1762257084621,
   "embeddingSize": 32,
   "adjListSize": 5920,
   "userEmbeddingsCount": 0,
   "productEmbeddingsCount": 5920,
-  "savedAt": "2025-11-04T11:30:10.669Z"
+  "savedAt": "2025-11-04T11:51:24.625Z"
 }

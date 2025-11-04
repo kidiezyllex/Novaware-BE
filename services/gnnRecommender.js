@@ -99,13 +99,17 @@ class GNNRecommender {
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
       .limit(MAX_USERS_GNN)
-      .sort({ 'interactionHistory': -1 }); // Get most active users first
+      .sort({ 'interactionHistory': -1 }) // Get most active users first
+      .allowDiskUse(true)
+      .lean();
       
     console.log('📊 Fetching products with compatibility data...');
     const products = await Product.find()
       .select('_id compatibleProducts')
       .limit(MAX_PRODUCTS_GNN)
-      .sort({ rating: -1 }); // Get highest rated products first
+      .sort({ rating: -1 }) // Get highest rated products first
+      .allowDiskUse(true)
+      .lean();
 
     console.log(`✅ Found ${users.length} users and ${products.length} products (memory-limited)`);
 
@@ -654,7 +658,15 @@ class GNNRecommender {
       console.log(`🔄 Converting ${this.userEmbeddings.size} user embeddings...`);
       let userCount = 0;
       for (const [id, tensor] of this.userEmbeddings) {
-        embeddingsData.userEmbeddings[id] = tensor.dataSync();
+        const values = Array.from(tensor.dataSync()).map(v => (Number.isFinite(v) ? v : 0));
+        // Ensure fixed length
+        if (values.length !== this.embeddingSize) {
+          const fixed = values.slice(0, this.embeddingSize);
+          while (fixed.length < this.embeddingSize) fixed.push(0);
+          embeddingsData.userEmbeddings[id] = fixed;
+        } else {
+          embeddingsData.userEmbeddings[id] = values;
+        }
         userCount++;
         if (userCount % 100 === 0) {
           console.log(`   Converted ${userCount}/${this.userEmbeddings.size} user embeddings...`);
@@ -666,7 +678,14 @@ class GNNRecommender {
       console.log(`🔄 Converting ${this.productEmbeddings.size} product embeddings...`);
       let productCount = 0;
       for (const [id, tensor] of this.productEmbeddings) {
-        embeddingsData.productEmbeddings[id] = tensor.dataSync();
+        const values = Array.from(tensor.dataSync()).map(v => (Number.isFinite(v) ? v : 0));
+        if (values.length !== this.embeddingSize) {
+          const fixed = values.slice(0, this.embeddingSize);
+          while (fixed.length < this.embeddingSize) fixed.push(0);
+          embeddingsData.productEmbeddings[id] = fixed;
+        } else {
+          embeddingsData.productEmbeddings[id] = values;
+        }
         productCount++;
         if (productCount % 200 === 0) {
           console.log(`   Converted ${productCount}/${this.productEmbeddings.size} product embeddings...`);
@@ -747,7 +766,15 @@ class GNNRecommender {
       this.userEmbeddings.clear();
       let userRestoreCount = 0;
       for (const [id, data] of Object.entries(embeddingsData.userEmbeddings)) {
-        this.userEmbeddings.set(id, tf.tensor(data));
+        try {
+          if (!Array.isArray(data)) throw new Error('Invalid data format');
+          const arr = data.map(v => (Number.isFinite(v) ? v : 0));
+          const fixed = arr.length === this.embeddingSize ? arr : (() => { const f = arr.slice(0, this.embeddingSize); while (f.length < this.embeddingSize) f.push(0); return f; })();
+          this.userEmbeddings.set(id, tf.tensor(fixed));
+        } catch (e) {
+          console.warn(`⚠️  Skip invalid user embedding ${id}: ${e.message}`);
+          continue;
+        }
         userRestoreCount++;
         if (userRestoreCount % 100 === 0) {
           console.log(`   Restored ${userRestoreCount}/${Object.keys(embeddingsData.userEmbeddings).length} user embeddings...`);
@@ -760,7 +787,15 @@ class GNNRecommender {
       this.productEmbeddings.clear();
       let productRestoreCount = 0;
       for (const [id, data] of Object.entries(embeddingsData.productEmbeddings)) {
-        this.productEmbeddings.set(id, tf.tensor(data));
+        try {
+          if (!Array.isArray(data)) throw new Error('Invalid data format');
+          const arr = data.map(v => (Number.isFinite(v) ? v : 0));
+          const fixed = arr.length === this.embeddingSize ? arr : (() => { const f = arr.slice(0, this.embeddingSize); while (f.length < this.embeddingSize) f.push(0); return f; })();
+          this.productEmbeddings.set(id, tf.tensor(fixed));
+        } catch (e) {
+          console.warn(`⚠️  Skip invalid product embedding ${id}: ${e.message}`);
+          continue;
+        }
         productRestoreCount++;
         if (productRestoreCount % 200 === 0) {
           console.log(`   Restored ${productRestoreCount}/${Object.keys(embeddingsData.productEmbeddings).length} product embeddings...`);
@@ -786,6 +821,12 @@ class GNNRecommender {
       this.isTrained = modelData.isTrained;
       this.lastTrainingTime = modelData.lastTrainingTime;
       this.embeddingSize = modelData.embeddingSize;
+      
+      // Sanity check: embeddings must exist
+      if (this.productEmbeddings.size === 0) {
+        console.warn('⚠️  No product embeddings restored. Will retrain.');
+        return false;
+      }
       
       const loadEndTime = Date.now() - loadStartTime;
       console.log(`🎉 GNN model loaded successfully!`);
@@ -813,6 +854,13 @@ class GNNRecommender {
         console.log('❌ No saved model found, training new model...');
         await this.train();
       }
+    }
+
+    // If after load/train we still have no product embeddings, fallback
+    if (this.productEmbeddings.size === 0) {
+      console.warn('⚠️  No product embeddings available. Falling back to cold-start');
+      const cold = await this.recommendColdStart(userId, k);
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)' };
     }
 
     console.log('👤 Fetching user data...');
@@ -853,7 +901,7 @@ class GNNRecommender {
     console.log(`✅ Selected ${topIds.length} top products`);
 
     console.log('🛍️  Fetching product details from database...');
-    const products = await Product.find({ _id: { $in: topIds } });
+    const products = topIds.length > 0 ? await Product.find({ _id: { $in: topIds } }) : [];
     console.log(`✅ Retrieved ${products.length} product details`);
 
     console.log('👗 Generating outfit recommendations...');
@@ -871,9 +919,37 @@ class GNNRecommender {
   }
 
   async recommendPersonalize(userId, k = 10) {
-    // Must have interaction history
-    const result = await this.recommend(userId, k);
-    return { products: result.products, model: result.model, timestamp: new Date().toISOString() };
+    // 尝试个性化；若无历史则回退冷启动
+    try {
+      const result = await this.recommend(userId, k);
+      return { products: result.products, model: result.model, timestamp: new Date().toISOString() };
+    } catch (error) {
+      const msg = (error && error.message) ? error.message : '';
+      const isColdStartCase = msg.includes('no interaction history') || msg.includes('not found in training data') || msg.includes('User not found');
+      if (!isColdStartCase) throw error;
+      const cold = await this.recommendColdStart(userId, k);
+      return { products: cold, model: 'ColdStart (TopRated)', timestamp: new Date().toISOString() };
+    }
+  }
+
+  async recommendColdStart(userId, k = 10) {
+    let genderAllow = null;
+    try {
+      const user = await User.findById(userId).select('gender');
+      if (user && user.gender) {
+        genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+          : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+          : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+      }
+    } catch (_) {}
+
+    const query = genderAllow ? { category: { $in: Array.from(genderAllow) } } : {};
+    const products = await Product.find(query)
+      .sort({ rating: -1 })
+      .limit(k)
+      .allowDiskUse(true)
+      .lean();
+    return products;
   }
 
   async recommendOutfits(userId, { productId = null, k = 12 } = {}) {

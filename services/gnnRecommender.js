@@ -99,16 +99,14 @@ class GNNRecommender {
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
       .limit(MAX_USERS_GNN)
-      .sort({ 'interactionHistory': -1 }) // Get most active users first
-      .allowDiskUse(true)
+      .setOptions({ allowDiskUse: true })
       .lean();
       
     console.log('📊 Fetching products with compatibility data...');
     const products = await Product.find()
       .select('_id compatibleProducts')
       .limit(MAX_PRODUCTS_GNN)
-      .sort({ rating: -1 }) // Get highest rated products first
-      .allowDiskUse(true)
+      .setOptions({ allowDiskUse: true })
       .lean();
 
     console.log(`✅ Found ${users.length} users and ${products.length} products (memory-limited)`);
@@ -947,7 +945,7 @@ class GNNRecommender {
     const products = await Product.find(query)
       .sort({ rating: -1 })
       .limit(k)
-      .allowDiskUse(true)
+      .setOptions({ allowDiskUse: true })
       .lean();
     return products;
   }

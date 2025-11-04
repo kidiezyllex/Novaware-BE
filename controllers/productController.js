@@ -237,7 +237,8 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
     _id: { $ne: new mongoose.Types.ObjectId(excludeId) }, // ép kiểu đúng
   })
     .sort({ rating: -1 })
-    .limit(4);
+    .limit(4)
+    .setOptions({ allowDiskUse: true });
 
   res.set("Cache-Control", "no-store"); 
   sendSuccess(res, 200, "Related products retrieved successfully", { products });

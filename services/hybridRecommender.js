@@ -45,12 +45,12 @@ class HybridRecommender {
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
       .limit(MAX_USERS)
-      .sort({ 'interactionHistory': -1 }); // Get most active users first
+      .setOptions({ allowDiskUse: true });
       
     const products = await Product.find()
       .select('_id')
       .limit(MAX_PRODUCTS)
-      .sort({ rating: -1 }); // Get highest rated products first
+      .setOptions({ allowDiskUse: true });
     
     console.log(`📊 Using ${users.length} users and ${products.length} products (limited for memory)`);
     
@@ -173,7 +173,7 @@ class HybridRecommender {
     const products = await Product.find()
       .select('_id description featureVector category brand outfitTags')
       .limit(MAX_PRODUCTS)
-      .sort({ rating: -1 });
+      .setOptions({ allowDiskUse: true });
     
     console.log(`📊 Processing ${products.length} products for similarity`);
     
@@ -562,13 +562,15 @@ class HybridRecommender {
     const personalizedProducts = await Product.find(query)
       .select('_id name images price category brand outfitTags colors featureVector')
       .limit(Math.min(k * 2, 200)) // Cap at 200 products
-      .sort({ rating: -1 });
+      .sort({ rating: -1 })
+      .setOptions({ allowDiskUse: true });
     
     if (personalizedProducts.length < k) {
       const popularProducts = await Product.find({ _id: { $nin: personalizedProducts.map(p => p._id) } })
         .select('_id name images price category brand outfitTags colors featureVector')
         .sort({ rating: -1, numReviews: -1 })
-        .limit(Math.min(k - personalizedProducts.length, 100)); // Cap at 100 additional products
+        .limit(Math.min(k - personalizedProducts.length, 100)) // Cap at 100 additional products
+        .setOptions({ allowDiskUse: true });
       
       personalizedProducts.push(...popularProducts);
     }

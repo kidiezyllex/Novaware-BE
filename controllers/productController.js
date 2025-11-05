@@ -28,9 +28,9 @@ const getProducts = asyncHandler(async (req, res) => {
     }
 
     if (req.query.option === "all") {
-      // Chỉ trả về các trường cần thiết, không trả về reviews và description
+      // Trả về các trường cần thiết
       const products = await Product.find({})
-        .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
+        .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
         .maxTimeMS(30000)
         .lean();
       
@@ -59,7 +59,7 @@ const getProducts = asyncHandler(async (req, res) => {
       const [count, products] = await Promise.all([
         Product.countDocuments({ ...keyword }).maxTimeMS(30000),
         Product.find({ ...keyword })
-          .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
+          .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
           .limit(perPage)
           .skip(perPage * (page - 1))
           .maxTimeMS(30000)
@@ -89,7 +89,8 @@ const getProducts = asyncHandler(async (req, res) => {
 });
 
 const getProductById = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await Product.findById(req.params.id)
+    .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector");
   if (product) {
     sendSuccess(res, 200, "Product retrieved successfully", { product });
   } else {
@@ -232,16 +233,22 @@ const getTopProducts = asyncHandler(async (req, res) => {
         images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
         brand: 1,
         category: 1,
+        description: 1,
         rating: 1,
         numReviews: 1,
         countInStock: 1,
         size: 1,
         colors: 1,
+        user: 1,
+        reviews: 1,
+        outfitTags: 1,
+        compatibleProducts: 1,
         createdAt: 1,
+        updatedAt: 1,
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        // Không trả về reviews và description để giảm kích thước response
+        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
@@ -265,16 +272,22 @@ const getLatestProducts = asyncHandler(async (req, res) => {
         images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
         brand: 1,
         category: 1,
+        description: 1,
         rating: 1,
         numReviews: 1,
         countInStock: 1,
         size: 1,
         colors: 1,
+        user: 1,
+        reviews: 1,
+        outfitTags: 1,
+        compatibleProducts: 1,
         createdAt: 1,
+        updatedAt: 1,
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        // Không trả về reviews và description để giảm kích thước response
+        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
@@ -299,16 +312,22 @@ const getSaleProducts = asyncHandler(async (req, res) => {
         images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
         brand: 1,
         category: 1,
+        description: 1,
         rating: 1,
         numReviews: 1,
         countInStock: 1,
         size: 1,
         colors: 1,
+        user: 1,
+        reviews: 1,
+        outfitTags: 1,
+        compatibleProducts: 1,
         createdAt: 1,
+        updatedAt: 1,
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        // Không trả về reviews và description để giảm kích thước response
+        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
@@ -329,7 +348,7 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
     category,
     _id: { $ne: new mongoose.Types.ObjectId(excludeId) }, // ép kiểu đúng
   })
-    .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
+    .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
     .sort({ rating: -1 })
     .limit(4)
     .maxTimeMS(30000)
@@ -358,21 +377,28 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
     {
       $project: {
         _id: 1,
+        name: 1,
         price: 1,
         sale: 1,
         size: 1,
         images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
+        brand: 1,
+        category: 1,
+        description: 1,
         rating: 1,
         numReviews: 1,
         countInStock: 1,
-        name: 1,
-        brand: 1,
-        category: 1,
         colors: 1,
+        user: 1,
+        reviews: 1,
+        outfitTags: 1,
+        compatibleProducts: 1,
         createdAt: 1,
+        updatedAt: 1,
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
+        featureVector: 0, // Không trả về featureVector
       },
     },
     { $sort: { priceSale: sortBy === "asc" ? 1 : -1 } },
@@ -510,14 +536,20 @@ const filterProducts = asyncHandler(async (req, res) => {
         images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
         brand: 1,
         category: 1,
+        description: 1,
         rating: 1,
         numReviews: 1,
         countInStock: 1,
         size: 1,
         colors: 1,
+        user: 1,
+        reviews: 1,
+        outfitTags: 1,
+        compatibleProducts: 1,
         createdAt: 1,
+        updatedAt: 1,
         priceSale: 1,
-        // Không trả về reviews và description để giảm kích thước response
+        featureVector: 0, // Không trả về featureVector
       },
     },
   ];

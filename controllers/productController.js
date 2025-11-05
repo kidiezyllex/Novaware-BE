@@ -28,7 +28,19 @@ const getProducts = asyncHandler(async (req, res) => {
     }
 
     if (req.query.option === "all") {
-      const products = await Product.find({}).maxTimeMS(30000);
+      // Chỉ trả về các trường cần thiết, không trả về reviews và description
+      const products = await Product.find({})
+        .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
+        .maxTimeMS(30000)
+        .lean();
+      
+      // Giới hạn số lượng ảnh trả về
+      products.forEach(product => {
+        if (product.images && product.images.length > 3) {
+          product.images = product.images.slice(0, 3);
+        }
+      });
+      
       sendSuccess(res, 200, "All products retrieved successfully", { products });
     } else {
       const perPage = Math.min(parseInt(req.query.pageSize) || 20, 20);
@@ -47,10 +59,19 @@ const getProducts = asyncHandler(async (req, res) => {
       const [count, products] = await Promise.all([
         Product.countDocuments({ ...keyword }).maxTimeMS(30000),
         Product.find({ ...keyword })
+          .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
           .limit(perPage)
           .skip(perPage * (page - 1))
           .maxTimeMS(30000)
+          .lean()
       ]);
+
+      // Giới hạn số lượng ảnh trả về
+      products.forEach(product => {
+        if (product.images && product.images.length > 3) {
+          product.images = product.images.slice(0, 3);
+        }
+      });
 
       sendSuccess(res, 200, "Products retrieved successfully", { 
         products, 
@@ -200,8 +221,32 @@ const createProductReview = asyncHandler(async (req, res) => {
 const getTopProducts = asyncHandler(async (req, res) => {
   const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
   const products = await Product.aggregate([
-    { $sample: { size: perPage } },
-  ]).allowDiskUse(true);
+    { $sort: { rating: -1, numReviews: -1 } },
+    { $limit: perPage },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        price: 1,
+        sale: 1,
+        images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
+        brand: 1,
+        category: 1,
+        rating: 1,
+        numReviews: 1,
+        countInStock: 1,
+        size: 1,
+        colors: 1,
+        createdAt: 1,
+        priceSale: {
+          $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
+        },
+        // Không trả về reviews và description để giảm kích thước response
+      },
+    },
+  ])
+    .allowDiskUse(true)
+    .maxTimeMS(30000);
 
   sendSuccess(res, 200, "Top products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -209,8 +254,32 @@ const getTopProducts = asyncHandler(async (req, res) => {
 const getLatestProducts = asyncHandler(async (req, res) => {
   const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
   const products = await Product.aggregate([
-    { $sample: { size: perPage } },
-  ]).allowDiskUse(true);
+    { $sort: { createdAt: -1 } },
+    { $limit: perPage },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        price: 1,
+        sale: 1,
+        images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
+        brand: 1,
+        category: 1,
+        rating: 1,
+        numReviews: 1,
+        countInStock: 1,
+        size: 1,
+        colors: 1,
+        createdAt: 1,
+        priceSale: {
+          $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
+        },
+        // Không trả về reviews và description để giảm kích thước response
+      },
+    },
+  ])
+    .allowDiskUse(true)
+    .maxTimeMS(30000);
 
   sendSuccess(res, 200, "Latest products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -219,8 +288,32 @@ const getSaleProducts = asyncHandler(async (req, res) => {
   const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
   const products = await Product.aggregate([
     { $match: { sale: { $gt: 0 } } },
-    { $sample: { size: perPage } },
-  ]).allowDiskUse(true);
+    { $sort: { sale: -1, createdAt: -1 } },
+    { $limit: perPage },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        price: 1,
+        sale: 1,
+        images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
+        brand: 1,
+        category: 1,
+        rating: 1,
+        numReviews: 1,
+        countInStock: 1,
+        size: 1,
+        colors: 1,
+        createdAt: 1,
+        priceSale: {
+          $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
+        },
+        // Không trả về reviews và description để giảm kích thước response
+      },
+    },
+  ])
+    .allowDiskUse(true)
+    .maxTimeMS(30000);
 
   sendSuccess(res, 200, "Sale products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -236,9 +329,18 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
     category,
     _id: { $ne: new mongoose.Types.ObjectId(excludeId) }, // ép kiểu đúng
   })
+    .select("_id name price sale images brand category rating numReviews countInStock size colors createdAt")
     .sort({ rating: -1 })
     .limit(4)
-    .setOptions({ allowDiskUse: true });
+    .maxTimeMS(30000)
+    .lean();
+
+  // Giới hạn số lượng ảnh trả về
+  products.forEach(product => {
+    if (product.images && product.images.length > 3) {
+      product.images = product.images.slice(0, 3);
+    }
+  });
 
   res.set("Cache-Control", "no-store"); 
   sendSuccess(res, 200, "Related products retrieved successfully", { products });
@@ -250,26 +352,24 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
   const perPage = Math.min(parseInt(req.query.perPage) || 20, 20);
   const page = parseInt(req.query.pageNumber) || 1;
   const skipCount = perPage * (page - 1);
-  const count = await Product.countDocuments({});
+  const count = await Product.countDocuments({}).maxTimeMS(30000);
 
   const products = await Product.aggregate([
     {
       $project: {
+        _id: 1,
         price: 1,
         sale: 1,
         size: 1,
-        images: 1,
+        images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
         rating: 1,
         numReviews: 1,
         countInStock: 1,
         name: 1,
         brand: 1,
         category: 1,
-        description: 1,
-        user: 1,
-        reviews: 1,
+        colors: 1,
         createdAt: 1,
-        updatedAt: 1,
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
@@ -278,7 +378,9 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
     { $sort: { priceSale: sortBy === "asc" ? 1 : -1 } },
     { $skip: skipCount },
     { $limit: perPage },
-  ]).allowDiskUse(true);
+  ])
+    .allowDiskUse(true)
+    .maxTimeMS(30000);
 
   sendSuccess(res, 200, "Products sorted by price retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
@@ -399,6 +501,25 @@ const filterProducts = asyncHandler(async (req, res) => {
     { $sort: sortOption },
     { $skip: perPage * (page - 1) },
     { $limit: perPage },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        price: 1,
+        sale: 1,
+        images: { $slice: ["$images", 3] }, // Chỉ lấy 3 ảnh đầu tiên
+        brand: 1,
+        category: 1,
+        rating: 1,
+        numReviews: 1,
+        countInStock: 1,
+        size: 1,
+        colors: 1,
+        createdAt: 1,
+        priceSale: 1,
+        // Không trả về reviews và description để giảm kích thước response
+      },
+    },
   ];
 
   const countPipeline = [
@@ -407,8 +528,8 @@ const filterProducts = asyncHandler(async (req, res) => {
   ];
 
   const [products, countQuery] = await Promise.all([
-    Product.aggregate(dataPipeline).allowDiskUse(true),
-    Product.aggregate(countPipeline).allowDiskUse(true),
+    Product.aggregate(dataPipeline).allowDiskUse(true).maxTimeMS(30000),
+    Product.aggregate(countPipeline).allowDiskUse(true).maxTimeMS(30000),
   ]);
 
   const totalCount = countQuery.length > 0 ? countQuery[0].count : 0;

@@ -27,6 +27,40 @@ import { setupSwagger } from "./config/swagger.js";
 
 dotenv.config();
 
+let memoryCheckInterval = null;
+
+const setupMemoryMonitoring = () => {
+  memoryCheckInterval = setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    const heapTotalMB = Math.round(memUsage.heapTotal / 1024 / 1024);
+    const usagePercentage = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+    if (usagePercentage > 80 && global.gc) {
+      global.gc();
+      const afterGC = process.memoryUsage();
+      const afterHeapMB = Math.round(afterGC.heapUsed / 1024 / 1024);
+    }
+
+    // Critical memory warning
+    if (usagePercentage > 90) {
+      console.warn('🚨 CRITICAL: Memory usage exceeds 90%!');
+    }
+  }, 5 * 60 * 1000); // Check every 5 minutes
+};
+
+// Cleanup on exit
+process.on('SIGTERM', () => {
+  if (memoryCheckInterval) {
+    clearInterval(memoryCheckInterval);
+  }
+});
+
+process.on('SIGINT', () => {
+  if (memoryCheckInterval) {
+    clearInterval(memoryCheckInterval);
+  }
+});
+
 const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
 
 // Ensure database connection is established before starting server
@@ -195,6 +229,9 @@ const startServer = async () => {
         console.log(`📡 Backend API running at: http://localhost:${PORT}/api`);
         console.log(`📚 Swagger documentation running at: http://localhost:${PORT}/api-docs`);
         console.log(`📖 Documentation files available at: http://localhost:${PORT}/docs`);
+        
+        // Start memory monitoring after server starts
+        setupMemoryMonitoring();
       }
     );
   } catch (error) {
@@ -202,6 +239,7 @@ const startServer = async () => {
     process.exit(1);
   }
 };
+
 
 // Start the server
 startServer();

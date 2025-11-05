@@ -35,16 +35,12 @@ class ProgressBar {
     const remaining = this.total - this.current;
     const eta = rate > 0 ? Math.round(remaining / rate / 1000) : 0;
     
-    // Truncate product name if too long
     const productName = label.length > 30 ? label.substring(0, 27) + "..." : label;
     
-    // Always log progress - Windows PowerShell works better with console.log
     const message = `${bar} ${percentage.toFixed(1)}% | ${this.current}/${this.total} | ETA: ${eta}s | ${productName}`;
-    console.log(message);
     
     if (this.current === this.total) {
       const totalTime = Math.floor((Date.now() - this.startTime) / 1000);
-      console.log(`\n✅ Completed in ${totalTime}s\n`);
     }
   }
 }

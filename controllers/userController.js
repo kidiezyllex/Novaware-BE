@@ -119,7 +119,8 @@ const getUsers = asyncHandler(async (req, res) => {
   const users = await User.find({})
     .select('-password')
     .limit(perPage)
-    .skip(perPage * (page - 1));
+    .skip(perPage * (page - 1))
+    .lean(); 
     
   sendSuccess(res, 200, "Users retrieved successfully", { 
     users, 

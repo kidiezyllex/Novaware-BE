@@ -5,12 +5,12 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "server": "nodemon server.js",
-    "dev": "nodemon server.js",
-    "data:import": "node seeder.js",
-    "data:destroy": "node seeder.js -d",
-    "migrate:products": "node scripts/migrateProducts.js",
+    "start": "node --max-old-space-size=4096 --expose-gc server.js",
+    "server": "nodemon --exec \"node --max-old-space-size=4096 --expose-gc\" server.js",
+    "dev": "nodemon --exec \"node --max-old-space-size=4096 --expose-gc\" server.js",
+    "data:import": "node --max-old-space-size=4096 seeder.js",
+    "data:destroy": "node --max-old-space-size=4096 seeder.js -d",
+    "migrate:products": "node --max-old-space-size=4096 scripts/migrateProducts.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

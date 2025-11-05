@@ -614,8 +614,6 @@ export const setupSwagger = (app) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(specs);
   });
-
-  console.log('Swagger documentation initialized at /api-docs');
 };
 
 export default setupSwagger;

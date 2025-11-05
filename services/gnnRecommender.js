@@ -893,7 +893,7 @@ class GNNRecommender {
       
       if (genderAllow.has(product.category)) {
         personalizedScore *= 1.3;
-        factors.push(`phù hợp với giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}`);
+        factors.push(`suitable for ${user.gender === 'male' ? 'male' : 'female'} gender`);
       } else {
         personalizedScore *= 0.3;
       }
@@ -903,34 +903,34 @@ class GNNRecommender {
       const ageInfo = this.getAgeAppropriateCategories(user.age);
       if (ageInfo && ageInfo.categories.includes(product.category)) {
         personalizedScore *= 1.2;
-        factors.push(`phù hợp với độ tuổi ${user.age}`);
+        factors.push(`suitable for age ${user.age}`);
       }
       
       if (ageInfo && product.outfitTags?.includes(ageInfo.style)) {
         personalizedScore *= 1.15;
-        factors.push(`phù hợp với phong cách ${ageInfo.style}`);
+        factors.push(`matches ${ageInfo.style} style`);
       }
     }
 
     if (historyAnalysis.categories.includes(product.category)) {
       personalizedScore *= 1.4;
-      factors.push(`bạn đã tương tác với danh mục ${product.category}`);
+      factors.push(`you have interacted with ${product.category} category`);
     }
     
     if (historyAnalysis.brands.includes(product.brand)) {
       personalizedScore *= 1.3;
-      factors.push(`bạn đã mua thương hiệu ${product.brand}`);
+      factors.push(`you have purchased ${product.brand} brand`);
     }
     
     if (historyAnalysis.styles.some(style => product.outfitTags?.includes(style))) {
       personalizedScore *= 1.25;
-      factors.push(`phù hợp với phong cách bạn thích`);
+      factors.push(`matches your preferred style`);
     }
 
     if (user.preferences) {
       if (user.preferences.style && product.outfitTags?.includes(user.preferences.style)) {
         personalizedScore *= 1.2;
-        factors.push(`phù hợp với sở thích phong cách ${user.preferences.style}`);
+        factors.push(`matches your preferred ${user.preferences.style} style`);
       }
       
       if (user.preferences.colorPreferences && product.colors) {
@@ -940,7 +940,7 @@ class GNNRecommender {
         );
         if (matchingColors.length > 0) {
           personalizedScore *= 1.15;
-          factors.push(`có màu sắc bạn yêu thích (${matchingColors.join(', ')})`);
+          factors.push(`has your favorite colors (${matchingColors.join(', ')})`);
         }
       }
     }
@@ -969,7 +969,7 @@ class GNNRecommender {
     if (this.productEmbeddings.size === 0) {
       console.warn('⚠️  No product embeddings available. Falling back to cold-start');
       const cold = await this.recommendColdStart(userId, k);
-      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding, sử dụng sản phẩm phổ biến nhất' };
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'No embedding data available, using most popular products' };
     }
 
     console.log('👤 Fetching user data...');
@@ -1000,7 +1000,7 @@ class GNNRecommender {
     if (allProductIds.length === 0) {
       console.warn('⚠️  No product embeddings available. Falling back to cold-start');
       const cold = await this.recommendColdStart(userId, k);
-      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding, sử dụng sản phẩm phổ biến nhất' };
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'No embedding data available, using most popular products' };
     }
     
     const validEmbeddings = [];
@@ -1016,7 +1016,7 @@ class GNNRecommender {
     if (validEmbeddings.length === 0) {
       console.warn('⚠️  No valid product embeddings available. Falling back to cold-start');
       const cold = await this.recommendColdStart(userId, k);
-      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding hợp lệ, sử dụng sản phẩm phổ biến nhất' };
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'No valid embedding data available, using most popular products' };
     }
     
     console.log('   📊 Computing base scores in batch...');
@@ -1088,62 +1088,204 @@ class GNNRecommender {
     const reasons = [];
     
     if (user.gender) {
-      reasons.push(`Dựa trên giới tính ${user.gender === 'male' ? 'nam' : 'nữ'} của bạn`);
+      reasons.push(`Based on your ${user.gender === 'male' ? 'male' : 'female'} gender`);
     }
     
     if (user.age) {
       const ageInfo = this.getAgeAppropriateCategories(user.age);
       if (ageInfo) {
-        reasons.push(`Phù hợp với độ tuổi ${user.age} và phong cách ${ageInfo.style}`);
+        reasons.push(`Suitable for age ${user.age} and ${ageInfo.style} style`);
       }
     }
     
     if (historyAnalysis.categories.length > 0) {
       const topCategories = historyAnalysis.categories.slice(0, 3).join(', ');
-      reasons.push(`Dựa trên lịch sử tương tác với các danh mục: ${topCategories}`);
+      reasons.push(`Based on your interaction history with categories: ${topCategories}`);
     }
     
     if (historyAnalysis.brands.length > 0) {
       const topBrands = historyAnalysis.brands.slice(0, 2).join(', ');
-      reasons.push(`Bạn đã quan tâm đến thương hiệu: ${topBrands}`);
+      reasons.push(`You have shown interest in brands: ${topBrands}`);
     }
     
     if (user.preferences?.style) {
-      reasons.push(`Phù hợp với phong cách ${user.preferences.style} bạn yêu thích`);
+      reasons.push(`Matches your preferred ${user.preferences.style} style`);
     }
     
     if (products.length > 0) {
       const categories = [...new Set(products.map(p => p.category))];
-      reasons.push(`Gợi ý ${products.length} sản phẩm từ các danh mục: ${categories.join(', ')}`);
+      reasons.push(`Recommending ${products.length} products from categories: ${categories.join(', ')}`);
     }
     
-    return reasons.length > 0 ? reasons.join('. ') : 'Dựa trên mô hình GNN phân tích đồ thị tương tác người dùng và sản phẩm';
+    return reasons.length > 0 ? reasons.join('. ') : 'Based on GNN model analyzing user-product interaction graph';
   }
 
   async recommendPersonalize(userId, k = 10, opts = {}) {
     try {
-      const result = await this.recommend(userId, k);
-
       const { productId } = opts || {};
-      if (productId && Array.isArray(result.products) && result.products.length > 0) {
-        try {
-          const seed = await Product.findById(productId).select('_id category').lean();
-          if (seed) {
-            const sameCategory = [];
-            const others = [];
-            for (const p of result.products) {
-              if (p && p.category === seed.category) sameCategory.push(p); else others.push(p);
-            }
-            result.products = [...sameCategory, ...others].slice(0, k);
-            result.explanation = `${result.explanation || ''}${result.explanation ? '. ' : ''}Ưu tiên sản phẩm cùng danh mục với sản phẩm đang xem`;
-          }
-        } catch (_) { }
+      
+      if (!productId) {
+        const result = await this.recommend(userId, k);
+        return { 
+          products: result.products, 
+          model: result.model, 
+          timestamp: new Date().toISOString(),
+          explanation: result.explanation || ''
+        };
       }
+
+      console.log(`🎯 Starting personalized recommendation for user ${userId} based on product ${productId}`);
+      
+      if (!this.isTrained) {
+        console.log('🔄 Model not trained, attempting to load saved model...');
+        const loaded = await this.loadModel();
+        if (!loaded) {
+          if (this.strictLoadOnly) {
+            const err = new Error('GNN model not available (strict offline mode). Please run offline training first.');
+            err.statusCode = 503;
+            throw err;
+          }
+          console.log('❌ No saved model found, training new model...');
+          await this.train();
+        }
+      }
+
+      if (this.productEmbeddings.size === 0) {
+        console.warn('⚠️  No product embeddings available. Falling back to cold-start');
+        const cold = await this.recommendColdStart(userId, k);
+        return { 
+          products: cold, 
+          model: 'ColdStart (TopRated)', 
+          timestamp: new Date().toISOString(),
+          explanation: 'No embedding data available, using most popular products'
+        };
+      }
+
+      const user = await User.findById(userId).select('_id interactionHistory gender age preferences');
+      if (!user || !user.interactionHistory || user.interactionHistory.length === 0) {
+        throw new Error('User not found or has no interaction history');
+      }
+
+      const seedProduct = await Product.findById(productId)
+        .select('_id name description images price sale category brand outfitTags colors')
+        .lean();
+      
+      if (!seedProduct) {
+        throw new Error('Seed product not found');
+      }
+
+      const seedProductIdStr = productId.toString();
+      
+      let seedProductEmb = this.productEmbeddings.get(seedProductIdStr);
+      
+      if (!seedProductEmb) {
+        console.log(`⚠️  Seed product ${seedProductIdStr} not in training set, using random embedding`);
+        seedProductEmb = tf.randomNormal([this.embeddingSize]);
+      }
+
+      const historyAnalysis = await this.analyzeInteractionHistory(user);
+
+      const userIdStr = userId.toString();
+      let userEmb = this.userEmbeddings.get(userIdStr);
+      
+      if (!userEmb) {
+        console.log(`⚠️  User ${userIdStr} not in training set, using random embedding`);
+        userEmb = tf.randomNormal([this.embeddingSize]);
+        this.userEmbeddings.set(userIdStr, userEmb);
+      }
+
+      const allProductIds = Array.from(this.productEmbeddings.keys());
+      const validEmbeddings = [];
+      const validProductIds = [];
+      
+      for (let i = 0; i < allProductIds.length; i++) {
+        const prodId = allProductIds[i];
+        if (prodId === seedProductIdStr) continue;
+        
+        const emb = this.productEmbeddings.get(prodId);
+        if (emb != null) {
+          validEmbeddings.push(emb);
+          validProductIds.push(prodId);
+        }
+      }
+
+      if (validEmbeddings.length === 0) {
+        console.warn('⚠️  No valid product embeddings available. Falling back to cold-start');
+        const cold = await this.recommendColdStart(userId, k);
+        return { 
+          products: cold, 
+          model: 'ColdStart (TopRated)', 
+          timestamp: new Date().toISOString(),
+          explanation: 'No valid embedding data available, using most popular products'
+        };
+      }
+
+      const userEmbMatrix = userEmb.reshape([1, -1]);
+      const productEmbMatrix = tf.stack(validEmbeddings);
+      const userScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync();
+
+      const seedEmbMatrix = seedProductEmb.reshape([1, -1]);
+      const similarityScores = tf.matMul(seedEmbMatrix, productEmbMatrix, false, true).dataSync();
+
+      const combinedScores = userScores.map((userScore, idx) => {
+        return 0.6 * userScore + 0.4 * similarityScores[idx];
+      });
+
+      const candidatePoolSize = Math.min(k * 5, validProductIds.length);
+      const scoreIndexPairs = Array.from({length: validProductIds.length}, (_, i) => ({
+        score: combinedScores[i],
+        index: i
+      }));
+
+      scoreIndexPairs.sort((a, b) => b.score - a.score);
+      const topCandidateIndices = scoreIndexPairs.slice(0, candidatePoolSize).map(pair => pair.index);
+      const topCandidateIds = topCandidateIndices.map(i => validProductIds[i]);
+
+      const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } })
+        .select('_id name description images price sale category brand outfitTags colors')
+        .lean();
+      const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
+
+      const scoredProducts = [];
+      for (const idx of topCandidateIndices) {
+        const prodId = validProductIds[idx];
+        const product = productMap.get(prodId);
+        if (!product) continue;
+        if (this.violatesGenderKeywords(user, product)) continue;
+
+        const baseScore = combinedScores[idx];
+        
+        let categoryBonus = 1.0;
+        if (product.category === seedProduct.category) {
+          categoryBonus = 1.3;
+        }
+        
+        let brandBonus = 1.0;
+        if (product.brand === seedProduct.brand) {
+          brandBonus = 1.2;
+        }
+
+        const { score, factors } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore * categoryBonus * brandBonus);
+
+        scoredProducts.push({
+          product,
+          score,
+          factors
+        });
+      }
+
+      const topProducts = scoredProducts
+        .sort((a, b) => b.score - a.score)
+        .slice(0, k)
+        .map(item => item.product);
+
+      const explanation = this.generatePersonalizedExplanation(user, seedProduct, historyAnalysis, topProducts);
+
       return { 
-        products: result.products, 
-        model: result.model, 
+        products: topProducts, 
+        model: 'GNN (GCN)', 
         timestamp: new Date().toISOString(),
-        explanation: result.explanation || ''
+        explanation: explanation
       };
     } catch (error) {
       const msg = (error && error.message) ? error.message : '';
@@ -1152,8 +1294,8 @@ class GNNRecommender {
       const cold = await this.recommendColdStart(userId, k);
       const user = await User.findById(userId).select('gender age');
       const coldExplanation = user 
-        ? `Dựa trên ${user.gender ? `giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}` : ''} ${user.age ? `độ tuổi ${user.age}` : ''}. Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác`
-        : 'Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác';
+        ? `Based on ${user.gender ? `${user.gender === 'male' ? 'male' : 'female'} gender` : ''} ${user.age ? `age ${user.age}` : ''}. Using most popular products due to no interaction history`
+        : 'Using most popular products due to no interaction history';
       return { 
         products: cold, 
         model: 'ColdStart (TopRated)', 
@@ -1161,6 +1303,46 @@ class GNNRecommender {
         explanation: coldExplanation
       };
     }
+  }
+
+  generatePersonalizedExplanation(user, seedProduct, historyAnalysis, products) {
+    const reasons = [];
+    
+    if (seedProduct) {
+      reasons.push(`Based on the product you are viewing: ${seedProduct.name} (${seedProduct.category})`);
+    }
+    
+    if (user.gender) {
+      reasons.push(`Suitable for your ${user.gender === 'male' ? 'male' : 'female'} gender`);
+    }
+    
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo) {
+        reasons.push(`Suitable for age ${user.age} and ${ageInfo.style} style`);
+      }
+    }
+    
+    if (historyAnalysis.categories.length > 0) {
+      const topCategories = historyAnalysis.categories.slice(0, 3).join(', ');
+      reasons.push(`Based on your interaction history with categories: ${topCategories}`);
+    }
+    
+    if (historyAnalysis.brands.length > 0) {
+      const topBrands = historyAnalysis.brands.slice(0, 2).join(', ');
+      reasons.push(`You have shown interest in brands: ${topBrands}`);
+    }
+    
+    if (user.preferences?.style) {
+      reasons.push(`Matches your preferred ${user.preferences.style} style`);
+    }
+    
+    if (products.length > 0) {
+      const categories = [...new Set(products.map(p => p.category))];
+      reasons.push(`Recommending ${products.length} similar products from categories: ${categories.join(', ')}`);
+    }
+    
+    return reasons.length > 0 ? reasons.join('. ') : 'Based on the product you are viewing and GNN model similarity analysis';
   }
 
   async recommendColdStart(userId, k = 10) {
@@ -1309,30 +1491,30 @@ class GNNRecommender {
     const reasons = [];
     
     if (seedProduct) {
-      reasons.push(`Dựa trên sản phẩm bạn chọn: ${seedProduct.name} (${seedProduct.category})`);
+      reasons.push(`Based on the product you selected: ${seedProduct.name} (${seedProduct.category})`);
     }
     
     if (user.gender) {
-      const genderText = user.gender === 'male' ? 'nam' : user.gender === 'female' ? 'nữ' : 'unisex';
-      reasons.push(`Phối đồ phù hợp cho giới tính ${genderText}`);
+      const genderText = user.gender === 'male' ? 'male' : user.gender === 'female' ? 'female' : 'unisex';
+      reasons.push(`Outfit matching suitable for ${genderText} gender`);
     }
     
     if (user.age) {
       const ageInfo = this.getAgeAppropriateCategories(user.age);
       if (ageInfo) {
-        reasons.push(`Phong cách ${ageInfo.style} phù hợp với độ tuổi ${user.age}`);
+        reasons.push(`${ageInfo.style} style suitable for age ${user.age}`);
       }
     }
     
     if (historyAnalysis.styles.length > 0) {
-      reasons.push(`Kết hợp phong cách bạn thường chọn: ${historyAnalysis.styles.slice(0, 2).join(', ')}`);
+      reasons.push(`Combining styles you often choose: ${historyAnalysis.styles.slice(0, 2).join(', ')}`);
     }
     
     if (outfits.length > 0) {
-      reasons.push(`Tạo ${outfits.length} bộ phối đồ hoàn chỉnh với độ tương thích cao`);
+      reasons.push(`Created ${outfits.length} complete outfit combinations with high compatibility`);
     }
     
-    return reasons.length > 0 ? reasons.join('. ') : 'Phối đồ dựa trên sản phẩm bạn chọn và mô hình GNN phân tích tương thích';
+    return reasons.length > 0 ? reasons.join('. ') : 'Outfit matching based on the product you selected and GNN model compatibility analysis';
   }
 
   calculateOutfitCompatibility(products) {

@@ -4,11 +4,11 @@ const { TfIdf } = pkg;
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
 
-// Memory optimization constants
-const MAX_USERS = 2000; // Limit users to prevent memory overflow
-const MAX_PRODUCTS = 5000; // Limit products to prevent memory overflow
-const BATCH_SIZE = 100; // Process in smaller batches
-const MEMORY_CLEANUP_INTERVAL = 50; // Cleanup every N operations
+
+const MAX_USERS = 2000;
+const MAX_PRODUCTS = 5000;
+const BATCH_SIZE = 100;
+const MEMORY_CLEANUP_INTERVAL = 50;
 
 class HybridRecommender {
   constructor() {
@@ -27,6 +27,25 @@ class HybridRecommender {
     };
   }
 
+  containsGenderKeywords(product, keywords) {
+    const name = (product?.name || '').toLowerCase();
+    const desc = (product?.description || '').toLowerCase();
+    return keywords.some(k => name.includes(k) || desc.includes(k));
+  }
+
+  violatesGenderKeywords(user, product) {
+    if (!user || !user.gender) return false;
+    const FEMALE_KWS = ['female', 'woman', 'women', "women's", "woman's", 'girl', 'girls', "girl's", 'ladies', 'lady', 'she', 'her'];
+    const MALE_KWS = ['male', 'man', 'men', "men's", "man's", 'boy', 'boys', "boy's", 'gentleman', 'gents', 'he', 'him', 'his'];
+    if (user.gender === 'male') {
+      return this.containsGenderKeywords(product, FEMALE_KWS);
+    }
+    if (user.gender === 'female') {
+      return this.containsGenderKeywords(product, MALE_KWS);
+    }
+    return false;
+  }
+
   async train() {
     try {
       await this.buildUserItemMatrix();
@@ -41,7 +60,6 @@ class HybridRecommender {
   async buildUserItemMatrix() {
     console.log('🏗️ Building user-item matrix with memory optimization...');
     
-    // Limit dataset size to prevent memory overflow
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
       .limit(MAX_USERS)
@@ -54,7 +72,6 @@ class HybridRecommender {
     
     console.log(`📊 Using ${users.length} users and ${products.length} products (limited for memory)`);
     
-    // Clear existing maps to free memory
     this.userIndexMap.clear();
     this.itemIndexMap.clear();
     
@@ -66,12 +83,10 @@ class HybridRecommender {
       this.itemIndexMap.set(product._id.toString(), index);
     });
     
-    // Initialize matrix with proper dimensions
     this.userItemMatrix = new Matrix(users.length, products.length);
     
     const interactionWeights = { 'view': 1, 'like': 2, 'cart': 3, 'purchase': 5, 'review': 4 };
     
-    // Process users in batches to manage memory
     for (let i = 0; i < users.length; i += BATCH_SIZE) {
       const batch = users.slice(i, i + BATCH_SIZE);
       
@@ -90,7 +105,6 @@ class HybridRecommender {
         });
       }
       
-      // Memory cleanup after each batch
       if (i % MEMORY_CLEANUP_INTERVAL === 0) {
         this.performMemoryCleanup();
       }
@@ -103,15 +117,13 @@ class HybridRecommender {
     console.log('🔗 Computing user similarity with memory optimization...');
     const numUsers = this.userItemMatrix.rows;
     
-    // Use sparse matrix approach for large datasets
     if (numUsers > 1000) {
       console.log('📊 Using sparse similarity computation for large dataset');
-      this.userSimilarityMatrix = new Map(); // Use Map instead of full matrix
+      this.userSimilarityMatrix = new Map();
       
       for (let i = 0; i < numUsers; i++) {
-        this.userSimilarityMatrix.set(`${i}-${i}`, 1.0); // Diagonal elements
+        this.userSimilarityMatrix.set(`${i}-${i}`, 1.0);
         
-        // Only compute similarities for top-k similar users
         const similarities = [];
         for (let j = 0; j < numUsers; j++) {
           if (i !== j) {
@@ -119,13 +131,12 @@ class HybridRecommender {
               this.userItemMatrix.getRow(i),
               this.userItemMatrix.getRow(j)
             );
-            if (similarity > 0.1) { // Only store significant similarities
+            if (similarity > 0.1) {
               similarities.push({ user: j, similarity });
             }
           }
         }
         
-        // Store only top 50 most similar users
         similarities
           .sort((a, b) => b.similarity - a.similarity)
           .slice(0, 50)
@@ -140,7 +151,6 @@ class HybridRecommender {
         }
       }
     } else {
-      // Use full matrix for smaller datasets
       this.userSimilarityMatrix = new Matrix(numUsers, numUsers);
       
       for (let i = 0; i < numUsers; i++) {
@@ -169,7 +179,6 @@ class HybridRecommender {
   async computeItemSimilarity() {
     console.log('🔗 Computing item similarity with memory optimization...');
     
-    // Limit products to prevent memory overflow
     const products = await Product.find()
       .select('_id description featureVector category brand outfitTags')
       .limit(MAX_PRODUCTS)
@@ -177,16 +186,14 @@ class HybridRecommender {
     
     console.log(`📊 Processing ${products.length} products for similarity`);
     
-    // Initialize TF-IDF with limited vocabulary
     const tfidf = new TfIdf();
     
-    // Add product descriptions to TF-IDF in batches
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
       const batch = products.slice(i, i + BATCH_SIZE);
       batch.forEach(p => tfidf.addDocument(p.description || ''));
     }
     
-    // Process products in batches to update feature vectors
+    const featureVectorUpdates = [];
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
       const batch = products.slice(i, i + BATCH_SIZE);
       
@@ -194,11 +201,20 @@ class HybridRecommender {
         const vector = [];
         tfidf.tfidfs(product.description || '', (j, measure) => vector.push(measure));
         
-        // Only update if vector is meaningful
         if (vector.length > 0) {
-          await Product.findByIdAndUpdate(product._id, { featureVector: vector });
+          featureVectorUpdates.push({
+            updateOne: {
+              filter: { _id: product._id },
+              update: { $set: { featureVector: vector } }
+            }
+          });
           product.featureVector = vector;
         }
+      }
+      
+      if (featureVectorUpdates.length >= 100) {
+        await Product.bulkWrite(featureVectorUpdates, { ordered: false });
+        featureVectorUpdates.length = 0;
       }
       
       if (i % MEMORY_CLEANUP_INTERVAL === 0) {
@@ -206,36 +222,77 @@ class HybridRecommender {
       }
     }
     
+    if (featureVectorUpdates.length > 0) {
+      await Product.bulkWrite(featureVectorUpdates, { ordered: false });
+    }
+    
     const numItems = products.length;
     
-    // Use sparse matrix for large datasets
     if (numItems > 1000) {
       console.log('📊 Using sparse item similarity computation');
       this.itemSimilarityMatrix = new Map();
       
+      const productsByCategory = new Map();
+      products.forEach((p, idx) => {
+        const cat = p.category || 'other';
+        if (!productsByCategory.has(cat)) {
+          productsByCategory.set(cat, []);
+        }
+        productsByCategory.get(cat).push(idx);
+      });
+      
       for (let i = 0; i < numItems; i++) {
         this.itemSimilarityMatrix.set(`${i}-${i}`, 1.0);
         
-        const similarities = [];
-        for (let j = 0; j < numItems; j++) {
-          if (i !== j) {
             const product1 = products[i];
+        const similarities = [];
+        
+        const candidates = new Set();
+        
+        const sameCategoryProducts = productsByCategory.get(product1.category || 'other') || [];
+        sameCategoryProducts.forEach(idx => {
+          if (idx !== i) candidates.add(idx);
+        });
+        
+        const otherCategories = Array.from(productsByCategory.keys()).filter(cat => cat !== product1.category);
+        let otherCount = 0;
+        for (const cat of otherCategories) {
+          if (otherCount >= 200) break;
+          const catProducts = productsByCategory.get(cat) || [];
+          const sampleSize = Math.min(20, catProducts.length);
+          const sampled = catProducts.sort(() => 0.5 - Math.random()).slice(0, sampleSize);
+          sampled.forEach(idx => {
+            if (otherCount < 200) {
+              candidates.add(idx);
+              otherCount++;
+            }
+          });
+        }
+        
+        for (const j of candidates) {
             const product2 = products[j];
+          
+          const hasCategoryMatch = product1.category === product2.category;
+          const hasBrandMatch = product1.brand === product2.brand;
+          const hasTagOverlap = product1.outfitTags && product2.outfitTags && 
+            product1.outfitTags.some(tag => product2.outfitTags.includes(tag));
+          
+          if (!hasCategoryMatch && !hasBrandMatch && !hasTagOverlap) {
+            continue;
+          }
             
             const contentSimilarity = this.computeContentSimilarity(product1, product2);
-            const categorySimilarity = product1.category === product2.category ? 0.3 : 0;
-            const brandSimilarity = product1.brand === product2.brand ? 0.2 : 0;
+          const categorySimilarity = hasCategoryMatch ? 0.3 : 0;
+          const brandSimilarity = hasBrandMatch ? 0.2 : 0;
             const tagSimilarity = this.computeTagSimilarity(product1.outfitTags || [], product2.outfitTags || []);
             
             const totalSimilarity = contentSimilarity + categorySimilarity + brandSimilarity + tagSimilarity;
             
             if (totalSimilarity > 0.1) {
               similarities.push({ item: j, similarity: Math.min(totalSimilarity, 1.0) });
-            }
           }
         }
         
-        // Store only top 30 most similar items
         similarities
           .sort((a, b) => b.similarity - a.similarity)
           .slice(0, 30)
@@ -244,13 +301,12 @@ class HybridRecommender {
             this.itemSimilarityMatrix.set(`${item}-${i}`, similarity);
           });
         
-        if (i % 100 === 0) {
+        if (i % 50 === 0) {
           console.log(`   Processed ${i}/${numItems} items`);
           this.performMemoryCleanup();
         }
       }
     } else {
-      // Use full matrix for smaller datasets
       this.itemSimilarityMatrix = new Matrix(numItems, numItems);
       
       for (let i = 0; i < numItems; i++) {
@@ -290,12 +346,10 @@ class HybridRecommender {
       return 0.1;
     }
     
-    // Ensure vectors have the same length for proper cosine similarity calculation
     const maxLength = Math.max(vector1.length, vector2.length);
     const normalizedVector1 = [...vector1];
     const normalizedVector2 = [...vector2];
     
-    // Pad shorter vector with zeros
     while (normalizedVector1.length < maxLength) {
       normalizedVector1.push(0);
     }
@@ -305,7 +359,6 @@ class HybridRecommender {
     
     const similarity = this.cosineSimilarity(normalizedVector1, normalizedVector2);
     
-    // Apply TF-IDF weight and ensure similarity is meaningful
     return Math.max(similarity * 0.5, 0.05);
   }
 
@@ -342,7 +395,6 @@ class HybridRecommender {
     return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
   }
 
-  // Helper method to get age-appropriate categories and styles
   getAgeAppropriateCategories(age) {
     if (!age) return null;
     
@@ -359,7 +411,6 @@ class HybridRecommender {
     }
   }
 
-  // Helper method to analyze user interaction history
   async analyzeInteractionHistory(user) {
     const history = user.interactionHistory || [];
     if (history.length === 0) return { categories: [], brands: [], styles: [] };
@@ -395,7 +446,6 @@ class HybridRecommender {
     };
   }
 
-  // Calculate age-based score adjustment
   calculateAgeScore(product, user) {
     if (!user.age) return 1.0;
     
@@ -404,12 +454,10 @@ class HybridRecommender {
     
     let score = 1.0;
     
-    // Category match
     if (ageInfo.categories.includes(product.category)) {
       score *= 1.2;
     }
     
-    // Style match
     if (ageInfo.style && product.outfitTags?.includes(ageInfo.style)) {
       score *= 1.15;
     }
@@ -432,7 +480,6 @@ class HybridRecommender {
       throw new Error('User not found in training data');
     }
     
-    // Analyze interaction history
     const historyAnalysis = await this.analyzeInteractionHistory(user);
     
     const personalizedProducts = await this.getPersonalizedProducts(user, k * 2);
@@ -447,10 +494,8 @@ class HybridRecommender {
       const cbScore = this.computeContentBasedScore(user, product);
       let hybridScore = (this.cfWeight * cfScore) + (this.cbWeight * cbScore);
       
-      // Apply age-based scoring
       hybridScore *= this.calculateAgeScore(product, user);
       
-      // Gender filtering
       if (user.gender) {
         const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
           : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
@@ -459,7 +504,7 @@ class HybridRecommender {
         if (genderAllow.has(product.category)) {
           hybridScore *= 1.3;
         } else {
-          hybridScore *= 0.3; // Heavily penalize if gender doesn't match
+          hybridScore *= 0.3;
         }
       }
       
@@ -468,7 +513,6 @@ class HybridRecommender {
       const historySimilarity = this.calculateHistorySimilarity(user, product);
       personalizedScore += historySimilarity * 0.3;
       
-      // History-based boosts
       if (historyAnalysis.categories.includes(product.category)) {
         personalizedScore *= 1.4;
       }
@@ -513,7 +557,6 @@ class HybridRecommender {
     
     const outfits = await this.generateGenderSpecificOutfits(topProducts, user);
     
-    // Generate explanation
     const explanation = this.generateExplanation(user, historyAnalysis, topProducts);
     
     return {
@@ -534,7 +577,6 @@ class HybridRecommender {
     let similaritySum = 0;
     
     if (this.userSimilarityMatrix instanceof Map) {
-      // Sparse matrix approach
       const userRatings = this.userItemMatrix.getColumn(itemIndex);
       
       for (let i = 0; i < userRatings.length; i++) {
@@ -547,7 +589,6 @@ class HybridRecommender {
         }
       }
     } else {
-      // Full matrix approach
       const userSimilarities = this.userSimilarityMatrix.getRow(userIndex);
       const userRatings = this.userItemMatrix.getColumn(itemIndex);
       
@@ -630,7 +671,6 @@ class HybridRecommender {
     const userStyles = new Set();
     const userColors = new Set();
     
-    // Process interactions in batches to prevent memory overflow
     const batchSize = 50;
     for (let i = 0; i < user.interactionHistory.length; i += batchSize) {
       const batch = user.interactionHistory.slice(i, i + batchSize);
@@ -649,7 +689,6 @@ class HybridRecommender {
         }
       }
       
-      // Memory cleanup after each batch
       if (i % MEMORY_CLEANUP_INTERVAL === 0) {
         this.performMemoryCleanup();
       }
@@ -669,25 +708,26 @@ class HybridRecommender {
       query.outfitTags = { $in: Array.from(userStyles) };
     }
     
-    // Limit results to prevent memory overflow
     const personalizedProducts = await Product.find(query)
-      .select('_id name images price category brand outfitTags colors featureVector')
-      .limit(Math.min(k * 2, 200)) // Cap at 200 products
+      .select('_id name description images price category brand outfitTags colors featureVector')
+      .limit(Math.min(k * 2, 200))
       .sort({ rating: -1 })
       .setOptions({ allowDiskUse: true });
     
-    if (personalizedProducts.length < k) {
-      const popularProducts = await Product.find({ _id: { $nin: personalizedProducts.map(p => p._id) } })
-        .select('_id name images price category brand outfitTags colors featureVector')
+    let filteredPersonalized = personalizedProducts.filter(p => !this.violatesGenderKeywords(user, p));
+
+    if (filteredPersonalized.length < k) {
+      const popularProducts = await Product.find({ _id: { $nin: filteredPersonalized.map(p => p._id) } })
+        .select('_id name description images price category brand outfitTags colors featureVector')
         .sort({ rating: -1, numReviews: -1 })
-        .limit(Math.min(k - personalizedProducts.length, 100)) // Cap at 100 additional products
+        .limit(Math.min(k - personalizedProducts.length, 100))
         .setOptions({ allowDiskUse: true });
-      
-      personalizedProducts.push(...popularProducts);
+      const filteredPopular = popularProducts.filter(p => !this.violatesGenderKeywords(user, p));
+      filteredPersonalized.push(...filteredPopular);
     }
     
-    console.log(`✅ Retrieved ${personalizedProducts.length} personalized products`);
-    return personalizedProducts;
+    console.log(`✅ Retrieved ${filteredPersonalized.length} personalized products`);
+    return filteredPersonalized;
   }
 
   calculateHistorySimilarity(user, product) {
@@ -903,7 +943,6 @@ class HybridRecommender {
     return comparisons > 0 ? totalCompatibility / comparisons : 0.5;
   }
 
-  // Generate explanation for recommendations
   generateExplanation(user, historyAnalysis, products) {
     const reasons = [];
     
@@ -942,10 +981,25 @@ class HybridRecommender {
     return reasons.length > 0 ? reasons.join('. ') : 'Dựa trên mô hình Hybrid kết hợp Collaborative và Content-Based Filtering';
   }
 
-  async recommendPersonalize(userId, k = 10) {
-    // Try personalized recommendation; fallback to cold start if no history
+  async recommendPersonalize(userId, k = 10, opts = {}) {
     try {
       const result = await this.recommend(userId, k);
+
+      const { productId } = opts || {};
+      if (productId && Array.isArray(result.products) && result.products.length > 0) {
+        try {
+          const seed = await Product.findById(productId).select('_id category').lean();
+          if (seed) {
+            const sameCategory = [];
+            const others = [];
+            for (const p of result.products) {
+              if (p && p.category === seed.category) sameCategory.push(p); else others.push(p);
+            }
+            result.products = [...sameCategory, ...others].slice(0, k);
+            result.explanation = `${result.explanation || ''}${result.explanation ? '. ' : ''}Ưu tiên sản phẩm cùng danh mục với sản phẩm đang xem`;
+          }
+        } catch (_) { }
+      }
       return { 
         products: result.products, 
         outfits: result.outfits,
@@ -958,7 +1012,6 @@ class HybridRecommender {
       const isColdStartCase = msg.includes('not found in training data') || msg.includes('User not found') || msg.includes('no interaction history');
       if (!isColdStartCase) throw error;
       
-      // Cold start fallback
       const user = await User.findById(userId).select('gender age');
       let genderAllow = null;
       if (user && user.gender) {
@@ -968,7 +1021,18 @@ class HybridRecommender {
       }
       
       const query = genderAllow ? { category: { $in: Array.from(genderAllow) } } : {};
+      if (user && user.gender) {
+        const femaleRegex = /(female|woman|women|ladies|girl|girls|she|her)/i;
+        const maleRegex = /(male|man|men|gentleman|gents|boy|boys|he|him|his)/i;
+        const exclusion = user.gender === 'male'
+          ? { $and: [ { name: { $not: femaleRegex } }, { description: { $not: femaleRegex } } ] }
+          : user.gender === 'female'
+            ? { $and: [ { name: { $not: maleRegex } }, { description: { $not: maleRegex } } ] }
+            : {};
+        Object.assign(query, exclusion);
+      }
       const products = await Product.find(query)
+        .select('_id name description images price category brand outfitTags colors featureVector')
         .sort({ rating: -1 })
         .limit(k)
         .setOptions({ allowDiskUse: true })
@@ -988,7 +1052,6 @@ class HybridRecommender {
     }
   }
 
-  // Generate explanation for outfit recommendations
   generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis) {
     const reasons = [];
     
@@ -1022,7 +1085,6 @@ class HybridRecommender {
   }
 
   async recommendOutfits(userId, { productId = null, k = 12 } = {}) {
-    // Must have gender and interaction history; and a selected seed product
     const user = await User.findById(userId).select('_id interactionHistory preferences gender age');
     if (!user) {
       throw new Error('User not found');
@@ -1049,24 +1111,19 @@ class HybridRecommender {
       throw new Error('User not found in training data');
     }
 
-    // Analyze interaction history
     const historyAnalysis = await this.analyzeInteractionHistory(user);
 
-    // Collect user history categories
     const historyIds = (user.interactionHistory || []).map(i => i.productId);
     const historyProducts = historyIds.length > 0 ? await Product.find({ _id: { $in: historyIds } }).select('_id category').lean() : [];
     const preferredCategories = new Set(historyProducts.map(p => p.category));
 
-    // Get seed product
     const seedProduct = await Product.findById(productId).lean();
     if (!seedProduct) {
       throw new Error('Seed product not found');
     }
 
-    // Get personalized products similar to the seed
     const personalizedProducts = await this.getPersonalizedProducts(user, k * 3);
     
-    // Compute scores for products with personalization
     const scoredProducts = [];
     for (const product of personalizedProducts) {
       const itemIndex = this.itemIndexMap.get(product._id.toString());
@@ -1076,10 +1133,8 @@ class HybridRecommender {
       let cbScore = this.computeContentBasedScore(user, product);
       let hybridScore = (this.cfWeight * cfScore) + (this.cbWeight * cbScore);
       
-      // Apply age-based scoring
       hybridScore *= this.calculateAgeScore(product, user);
       
-      // Gender filtering
       if (user.gender) {
         const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
           : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
@@ -1092,13 +1147,11 @@ class HybridRecommender {
         }
       }
       
-      // Boost score if same category as seed
       let finalScore = hybridScore;
       if (product.category === seedProduct.category) {
         finalScore *= 1.3;
       }
       
-      // History-based boosts
       if (historyAnalysis.categories.includes(product.category)) {
         finalScore *= 1.4;
       }
@@ -1113,24 +1166,20 @@ class HybridRecommender {
       });
     }
 
-    // Rank products
     const rankedProducts = scoredProducts
       .sort((a, b) => b.score - a.score)
       .map(item => item.product);
 
-    // Gender filter
     const gender = user.gender;
     const genderAllow = gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
                       : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
                       : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
 
-    // Filter by gender and prioritize preferred categories
     let filtered = rankedProducts.filter(p => genderAllow.has(p.category));
     if (preferredCategories.size > 0) {
-      filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
+        filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
     }
 
-    // Use the required productId as seed and prioritize category-matching items
     filtered = [
       seedProduct, 
       ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), 
@@ -1140,7 +1189,6 @@ class HybridRecommender {
     const topProducts = filtered.slice(0, Math.max(k * 2, 20));
     const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
     
-    // Generate explanation
     const explanation = this.generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis);
     
     return { 
@@ -1151,7 +1199,6 @@ class HybridRecommender {
     };
   }
 
-  // Build outfits that must include the selected seed product
   async generateOutfitsFromSeed(products, user, seedProduct, k = 12) {
     const outfits = [];
     const gender = user.gender || 'other';
@@ -1190,7 +1237,6 @@ class HybridRecommender {
     };
 
     if (gender === 'male' || gender === 'other') {
-      // Aim for Top + Bottom + Shoes including seed
       const seedAsTop = isTop(seedProduct);
       const seedAsBottom = isBottom(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
@@ -1207,7 +1253,6 @@ class HybridRecommender {
     }
 
     if (gender === 'female') {
-      // Aim for Dress + Accessories + Shoes including seed
       const seedAsDress = isDress(seedProduct);
       const seedAsAcc = isAccessory(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
@@ -1223,7 +1268,6 @@ class HybridRecommender {
       }
     }
 
-    // Deduplicate outfits by product sets
     const seenKeys = new Set();
     const deduped = [];
     for (const o of outfits) {
@@ -1240,19 +1284,16 @@ class HybridRecommender {
     console.log('🚀 Starting incremental Hybrid training...');
     const startTime = Date.now();
 
-    // Reset structures
     this.userIndexMap.clear();
     this.itemIndexMap.clear();
     this.userItemMatrix = null;
     this.userSimilarityMatrix = null;
     this.itemSimilarityMatrix = null;
 
-    // Count documents
     const usersCount = await User.countDocuments({ 'interactionHistory.0': { $exists: true } });
     const productsCount = await Product.countDocuments({});
     console.log(`📊 Counts → users(with history): ${usersCount}, products: ${productsCount}`);
 
-    // Page through users to build user index map
     const usersList = [];
     for (let skip = 0; skip < usersCount && skip < MAX_USERS; skip += BATCH_SIZE) {
       const users = await User.find({ 'interactionHistory.0': { $exists: true } })
@@ -1270,7 +1311,6 @@ class HybridRecommender {
       this.performMemoryCleanup();
     }
 
-    // Page through products to build item index map
     const productsList = [];
     for (let skip = 0; skip < productsCount && skip < MAX_PRODUCTS; skip += BATCH_SIZE) {
       const products = await Product.find()
@@ -1288,11 +1328,9 @@ class HybridRecommender {
       this.performMemoryCleanup();
     }
 
-    // Initialize matrix
     this.userItemMatrix = new Matrix(usersList.length, productsList.length);
     const interactionWeights = { 'view': 1, 'like': 2, 'cart': 3, 'purchase': 5, 'review': 4 };
 
-    // Build user-item matrix in batches
     for (let i = 0; i < usersList.length; i += BATCH_SIZE) {
       const batch = usersList.slice(i, i + BATCH_SIZE);
       
@@ -1315,7 +1353,6 @@ class HybridRecommender {
       }
     }
 
-    // Compute similarities using incremental approach
     await this.computeUserSimilarity();
     await this.computeItemSimilarity();
 
@@ -1331,27 +1368,22 @@ class HybridRecommender {
     this.cbWeight = cbWeight;
   }
 
-  // Memory management methods
   performMemoryCleanup() {
     this.memoryStats.operationsCount++;
     
-    // Force garbage collection if available
     if (global.gc) {
       global.gc();
     }
     
-    // Update memory stats
     const memUsage = process.memoryUsage();
     this.memoryStats.currentMemory = memUsage.heapUsed;
     this.memoryStats.peakMemory = Math.max(this.memoryStats.peakMemory, memUsage.heapUsed);
     
-    // Log memory usage every 100 operations
     if (this.memoryStats.operationsCount % 100 === 0) {
       console.log(`🧹 Memory cleanup - Current: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, Peak: ${Math.round(this.memoryStats.peakMemory / 1024 / 1024)}MB`);
     }
   }
 
-  // Method to clear large data structures
   clearMemory() {
     console.log('🧹 Clearing memory...');
     
@@ -1376,7 +1408,6 @@ class HybridRecommender {
     this.userIndexMap.clear();
     this.itemIndexMap.clear();
     
-    // Force garbage collection
     if (global.gc) {
       global.gc();
     }
@@ -1384,7 +1415,6 @@ class HybridRecommender {
     console.log('✅ Memory cleared successfully');
   }
 
-  // Method to get memory statistics
   getMemoryStats() {
     const memUsage = process.memoryUsage();
     return {

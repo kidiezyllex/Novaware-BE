@@ -25,6 +25,12 @@ const router = express.Router();
  *           type: integer
  *           default: 9
  *         description: Number of recommendations to generate
+ *       - in: query
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Current viewed productId to bias personalization
  *     responses:
  *       200:
  *         description: Personalized recommendations generated successfully
@@ -36,9 +42,13 @@ const router = express.Router();
 
 router.get('/gnn/personalize/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 9 } = req.query;
+  const { k = 9, productId = null } = req.query;
   try {
-    const data = await gnnRecommender.recommendPersonalize(userId, parseInt(k));
+    if (!productId) {
+      return res.status(400).json({ success: false, message: 'productId is required for personalize' });
+    }
+
+    const data = await gnnRecommender.recommendPersonalize(userId, parseInt(k), { productId });
 
     return res.json({ 
       success: true, 
@@ -74,6 +84,12 @@ router.get('/gnn/personalize/:userId', asyncHandler(async (req, res) => {
  *           type: integer
  *           default: 9
  *         description: Number of recommendations to generate
+ *       - in: query
+ *         name: productId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Current viewed productId to bias personalization
  *     responses:
  *       200:
  *         description: Personalized recommendations generated successfully
@@ -84,9 +100,13 @@ router.get('/gnn/personalize/:userId', asyncHandler(async (req, res) => {
  */
 router.get('/hybrid/personalize/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 9 } = req.query;
+  const { k = 9, productId = null } = req.query;
   try {
-    const data = await hybridRecommender.recommendPersonalize(userId, parseInt(k));
+    if (!productId) {
+      return res.status(400).json({ success: false, message: 'productId is required for personalize' });
+    }
+
+    const data = await hybridRecommender.recommendPersonalize(userId, parseInt(k), { productId });
 
     return res.json({ 
       success: true, 
@@ -99,107 +119,6 @@ router.get('/hybrid/personalize/:userId', asyncHandler(async (req, res) => {
     });
   } catch (e) {
     return res.status(400).json({ success: false, message: e.message || 'User not eligible for personalize' });
-  }
-}));
-
-/**
- * @swagger
- * /recommend/hybrid/{userId}:
- *   get:
- *     summary: Lấy gợi ý sản phẩm dựa trên hybrid
- *     description: Generate product recommendations using hybrid collaborative and content-based filtering
- *     tags: [Recommendations]
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *       - in: query
- *         name: k
- *         schema:
- *           type: integer
- *           default: 9
- *         description: Number of recommendations to generate (before pagination)
- *       - in: query
- *         name: pageNumber
- *         schema:
- *           type: integer
- *           default: 1
- *         description: Số trang (bắt đầu từ 1)
- *       - in: query
- *         name: perPage
- *         schema:
- *           type: integer
- *           default: 9
- *         description: Số lượng recommendations mỗi trang (mặc định 9)
- *     responses:
- *       200:
- *         description: Hybrid recommendations generated successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/RecommendationResponse'
- *       404:
- *         description: User not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/responses/NotFoundError'
- *       500:
- *         description: Error generating recommendations
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/responses/ErrorResponse'
- */
-router.get('/hybrid/:userId', asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  const { k = 9, pageNumber = 1, perPage = 9 } = req.query;
-  
-  try {
-    // Validate user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    const page = parseInt(pageNumber);
-    const limit = parseInt(perPage);
-    const skip = limit * (page - 1);
-    
-    // Generate recommendations
-    const recommendations = await hybridRecommender.recommend(userId, parseInt(k));
-    
-    // Apply pagination to recommendations
-    const paginatedRecommendations = {
-      ...recommendations,
-      products: recommendations.products?.slice(skip, skip + limit) || [],
-      pagination: {
-        page,
-        pages: Math.ceil((recommendations.products?.length || 0) / limit),
-        count: recommendations.products?.length || 0,
-        perPage: limit
-      }
-    };
-    
-    res.json({
-      success: true,
-      data: paginatedRecommendations,
-      message: 'Hybrid recommendations generated successfully'
-    });
-    
-  } catch (error) {
-    console.error('Hybrid Recommendation Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error generating hybrid recommendations',
-      error: error.message
-    });
   }
 }));
  

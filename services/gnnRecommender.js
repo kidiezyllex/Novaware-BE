@@ -3,24 +3,22 @@ import fs from 'fs/promises';
 import path from 'path';
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
-import Outfit from '../models/outfitModel.js';
 
-// Memory optimization constants
-const MAX_NODES = 1000; // Further reduced limit
-const MAX_USERS_GNN = 500; // Limit users for GNN
-const MAX_PRODUCTS_GNN = 1000; // Limit products for GNN
-const BATCH_SIZE_GNN = 50; // Smaller batch size
-const MEMORY_CLEANUP_INTERVAL_GNN = 25; // More frequent cleanup
+const MAX_NODES = 1000;
+const MAX_USERS_GNN = 500;
+const MAX_PRODUCTS_GNN = 1000;
+const BATCH_SIZE_GNN = 50;
+const MEMORY_CLEANUP_INTERVAL_GNN = 25;
 
 class GNNRecommender {
   constructor() {
     this.userEmbeddings = new Map();
     this.productEmbeddings = new Map();
-    this.adjList = new Map(); // userId -> [productId], productId -> [productId]
-    this.embeddingSize = 32; // Reduced from 64 to save memory
+    this.adjList = new Map();
+    this.embeddingSize = 32;
     this.isTrained = false;
     this.lastTrainingTime = 0;
-    this.trainingCacheTimeout = 30 * 60 * 1000; // 30 minutes cache
+    this.trainingCacheTimeout = 30 * 60 * 1000;
     this.modelPath = path.join(process.cwd(), 'models', 'gnn_model.json');
     this.embeddingsPath = path.join(process.cwd(), 'models', 'gnn_embeddings.json');
     this.memoryStats = {
@@ -28,9 +26,28 @@ class GNNRecommender {
       currentMemory: 0,
       operationsCount: 0
     };
+    this.strictLoadOnly = (process.env.RECOMMEND_STRICT_LOAD_ONLY || '').toLowerCase() === 'true';
   }
 
-  // --- Validation helpers ---
+  containsGenderKeywords(product, keywords) {
+    const name = (product?.name || '').toLowerCase();
+    const desc = (product?.description || '').toLowerCase();
+    return keywords.some(k => name.includes(k) || desc.includes(k));
+  }
+
+  violatesGenderKeywords(user, product) {
+    if (!user || !user.gender) return false;
+    const FEMALE_KWS = ['female', 'woman', 'women', "women's", "woman's", 'girl', 'girls', "girl's", 'ladies', 'lady', 'she', 'her'];
+    const MALE_KWS = ['male', 'man', 'men', "men's", "man's", 'boy', 'boys', "boy's", 'gentleman', 'gents', 'he', 'him', 'his'];
+    if (user.gender === 'male') {
+      return this.containsGenderKeywords(product, FEMALE_KWS);
+    }
+    if (user.gender === 'female') {
+      return this.containsGenderKeywords(product, MALE_KWS);
+    }
+    return false;
+  }
+
   async ensureUserWithHistory(userId, { requireGender = false } = {}) {
     const user = await User.findById(userId);
     if (!user) throw new Error('User not found');
@@ -43,7 +60,6 @@ class GNNRecommender {
     return user;
   }
 
-  // GCN Layer
   gcnLayer(features, adj) {
     console.log('   🔧 Starting GCN layer computation...');
     console.log(`   📊 Input features shape: ${features.shape}`);
@@ -89,14 +105,10 @@ class GNNRecommender {
     console.log('🏗️  Building GNN graph with memory optimization...');
     const graphStartTime = Date.now();
     
-    // Clear existing data to free memory
     this.userEmbeddings.clear();
     this.productEmbeddings.clear();
     this.adjList.clear();
-    // Track which IDs are users (since MongoDB ObjectIds don't start with 'user')
     const userIds = new Set();
-    
-    // Limit the number of users and products to prevent memory issues
     console.log('📊 Fetching users with interaction history...');
     const users = await User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
@@ -113,7 +125,6 @@ class GNNRecommender {
 
     console.log(`✅ Found ${users.length} users and ${products.length} products (memory-limited)`);
 
-    // Build adjacency list in batches
     console.log('🔗 Building user-product adjacency list...');
     let userProductEdges = 0;
     
@@ -122,7 +133,7 @@ class GNNRecommender {
       
       for (const user of batch) {
         const userId = user._id.toString();
-        userIds.add(userId); // Mark as user ID
+        userIds.add(userId);
         this.adjList.set(userId, []);
         
         for (const int of user.interactionHistory) {
@@ -133,14 +144,12 @@ class GNNRecommender {
         }
       }
       
-      // Memory cleanup after each batch
       if (i % MEMORY_CLEANUP_INTERVAL_GNN === 0) {
         this.performMemoryCleanup();
       }
     }
     console.log(`✅ Created ${userProductEdges} user-product edges`);
 
-    // Add product-product edges in batches
     console.log('🔗 Building product-product compatibility edges...');
     let productProductEdges = 0;
     
@@ -162,14 +171,12 @@ class GNNRecommender {
         }
       }
       
-      // Memory cleanup after each batch
       if (i % MEMORY_CLEANUP_INTERVAL_GNN === 0) {
         this.performMemoryCleanup();
       }
     }
     console.log(`✅ Created ${productProductEdges} product-product edges`);
 
-    // Create embeddings in batches
     console.log('🎲 Generating random embeddings for all nodes...');
     const nodeIds = Array.from(this.adjList.keys());
     let userEmbeddingCount = 0;
@@ -189,7 +196,6 @@ class GNNRecommender {
         }
       }
       
-      // Memory cleanup after each batch
       if (i % MEMORY_CLEANUP_INTERVAL_GNN === 0) {
         this.performMemoryCleanup();
       }
@@ -204,7 +210,6 @@ class GNNRecommender {
   }
 
   async train() {
-    // Check if we can use cached training
     const now = Date.now();
     if (this.isTrained && (now - this.lastTrainingTime) < this.trainingCacheTimeout) {
       console.log('✅ Using cached GNN model');
@@ -217,20 +222,17 @@ class GNNRecommender {
     await this.buildGraph();
     const nodeIds = Array.from(this.adjList.keys());
     
-    // Check if the graph is too large for memory
     const n = nodeIds.length;
-    const maxNodes = MAX_NODES; // Use constant
+    const maxNodes = MAX_NODES;
     
     if (n > maxNodes) {
       console.log(`⚠️  Graph too large (${n} nodes), sampling ${maxNodes} nodes for training`);
       
-      // Sample nodes randomly to reduce size
       console.log('🎲 Randomly sampling nodes...');
       const shuffled = nodeIds.sort(() => 0.5 - Math.random());
       const sampledNodeIds = shuffled.slice(0, maxNodes);
       console.log(`✅ Sampled ${sampledNodeIds.length} nodes`);
       
-      // Rebuild adjacency list with sampled nodes
       console.log('🔗 Rebuilding adjacency list for sampled nodes...');
       const sampledAdjList = new Map();
       let edgeCount = 0;
@@ -245,14 +247,12 @@ class GNNRecommender {
           edgeCount += filteredNeighbors.length;
         });
         
-        // Memory cleanup after each batch
         if (i % MEMORY_CLEANUP_INTERVAL_GNN === 0) {
           this.performMemoryCleanup();
         }
       }
       console.log(`✅ Rebuilt adjacency list with ${edgeCount} edges`);
       
-      // Use sampled data
       console.log('📊 Creating feature matrix for sampled nodes...');
       const features = tf.stack(
         sampledNodeIds.map(id =>
@@ -263,7 +263,6 @@ class GNNRecommender {
       );
       console.log(`✅ Feature matrix created: ${features.shape}`);
 
-      // Build sparse adjacency matrix for sampled nodes
       console.log('🔗 Building adjacency matrix for sampled nodes...');
       const adj = tf.zeros([maxNodes, maxNodes]);
       const adjData = adj.bufferSync();
@@ -283,23 +282,19 @@ class GNNRecommender {
           });
         });
         
-        // Memory cleanup after each batch
         if (i % MEMORY_CLEANUP_INTERVAL_GNN === 0) {
           this.performMemoryCleanup();
         }
       }
       console.log(`✅ Adjacency matrix built with ${matrixEdges} edges`);
 
-      // Simplified GNN: Skip complex GCN computation
       console.log('🧠 Starting simplified GNN training...');
       console.log('   ⚡ Skipping complex GCN computation to prevent hanging...');
       
       try {
-        // Use original features directly instead of GCN layers
         console.log('📊 Using original features for training...');
-        const h = features; // Use original features as embeddings
+        const h = features;
         
-        // Predict interaction
         console.log('🎯 Preparing interaction prediction...');
         const userIdx = sampledNodeIds.filter(id => this.userEmbeddings.has(id)).map(id => sampledNodeIds.indexOf(id));
         const prodIdx = sampledNodeIds.filter(id => !this.userEmbeddings.has(id)).map(id => sampledNodeIds.indexOf(id));
@@ -320,7 +315,6 @@ class GNNRecommender {
           console.log('🎓 Starting simplified training...');
           const trainingStartTime = Date.now();
           
-          // Update embeddings based on computed scores
           console.log('   Updating embeddings based on computed interactions...');
           this.updateEmbeddingsFromScores(scores, userIdx, prodIdx, sampledNodeIds);
           
@@ -337,7 +331,6 @@ class GNNRecommender {
     } else {
       console.log(`📊 Using full graph (${n} nodes) for training`);
       
-      // Original logic for smaller graphs
       console.log('📊 Creating feature matrix for all nodes...');
       const features = tf.stack(
         nodeIds.map(id =>
@@ -348,7 +341,6 @@ class GNNRecommender {
       );
       console.log(`✅ Feature matrix created: ${features.shape}`);
 
-      // Build adjacency matrix
       console.log('🔗 Building adjacency matrix...');
       const adj = tf.zeros([n, n]);
       const adjData = adj.bufferSync();
@@ -369,16 +361,13 @@ class GNNRecommender {
       });
       console.log(`✅ Adjacency matrix built with ${matrixEdges} edges`);
 
-      // Simplified GNN: Skip complex GCN computation
       console.log('🧠 Starting simplified GNN training...');
       console.log('   ⚡ Skipping complex GCN computation to prevent hanging...');
       
       try {
-        // Use original features directly instead of GCN layers
         console.log('📊 Using original features for training...');
-        const h = features; // Use original features as embeddings
+        const h = features;
         
-        // Predict interaction
         console.log('🎯 Preparing interaction prediction...');
         const userIdx = nodeIds.filter(id => this.userEmbeddings.has(id)).map(id => nodeIds.indexOf(id));
         const prodIdx = nodeIds.filter(id => !this.userEmbeddings.has(id)).map(id => nodeIds.indexOf(id));
@@ -399,7 +388,6 @@ class GNNRecommender {
           console.log('🎓 Starting simplified training...');
           const trainingStartTime = Date.now();
           
-          // Update embeddings based on computed scores
           console.log('   Updating embeddings based on computed interactions...');
           this.updateEmbeddingsFromScores(scores, userIdx, prodIdx, nodeIds);
           
@@ -422,12 +410,10 @@ class GNNRecommender {
     console.log(`   ⏱️  Total training time: ${trainingTime}ms`);
     console.log(`   📊 Training status: ${this.isTrained ? 'Trained' : 'Not trained'}`);
     
-    // Save the trained model
     console.log('💾 Saving trained model...');
     await this.saveModel();
   }
 
-  // Incremental training for large datasets: counts first, then paginates
   async trainIncremental() {
     const now = Date.now();
     if (this.isTrained && (now - this.lastTrainingTime) < this.trainingCacheTimeout) {
@@ -435,22 +421,35 @@ class GNNRecommender {
       return;
     }
 
+    if (this.userEmbeddings.size === 0 && this.productEmbeddings.size === 0) {
+      console.log('🔄 No embeddings in memory, attempting to load saved model first...');
+      const loaded = await this.loadModel();
+      if (loaded) {
+        const modelAge = Date.now() - this.lastTrainingTime;
+        if (modelAge < this.trainingCacheTimeout) {
+          console.log('✅ Loaded saved model is still valid, skipping retraining');
+          return;
+        }
+        console.log('⚠️  Loaded model is expired, will retrain with incremental updates');
+      }
+    }
+
     console.log('🚀 Starting incremental GNN training...');
     const startTime = Date.now();
 
-    // Reset structures
+    const existingUserEmbeddings = new Map(this.userEmbeddings);
+    const existingProductEmbeddings = new Map(this.productEmbeddings);
+    const existingAdjList = new Map(this.adjList);
+
     this.userEmbeddings.clear();
     this.productEmbeddings.clear();
     this.adjList.clear();
-    // Track which IDs are users (since MongoDB ObjectIds don't start with 'user')
     const userIds = new Set();
 
-    // Count documents
     const usersCount = await User.countDocuments({ 'interactionHistory.0': { $exists: true } });
     const productsCount = await Product.countDocuments({});
     console.log(`📊 Counts → users(with history): ${usersCount}, products: ${productsCount}`);
 
-    // Page through users
     for (let skip = 0; skip < usersCount && skip < MAX_USERS_GNN; skip += BATCH_SIZE_GNN) {
       const users = await User.find({ 'interactionHistory.0': { $exists: true } })
         .select('_id interactionHistory')
@@ -459,7 +458,7 @@ class GNNRecommender {
         .lean();
       for (const user of users) {
         const userId = user._id.toString();
-        userIds.add(userId); // Mark as user ID
+        userIds.add(userId);
         if (!this.adjList.has(userId)) this.adjList.set(userId, []);
         for (const int of user.interactionHistory) {
           const prodId = int.productId.toString();
@@ -470,7 +469,6 @@ class GNNRecommender {
       this.performMemoryCleanup();
     }
 
-    // Page through products to add product-product edges
     for (let skip = 0; skip < productsCount && skip < MAX_PRODUCTS_GNN; skip += BATCH_SIZE_GNN) {
       const products = await Product.find()
         .select('_id compatibleProducts')
@@ -492,24 +490,34 @@ class GNNRecommender {
       this.performMemoryCleanup();
     }
 
+    for (const [id, neighbors] of existingAdjList) {
+      if (!this.adjList.has(id)) {
+        this.adjList.set(id, [...neighbors]);
+      } else {
+        const existingNeighbors = new Set(this.adjList.get(id));
+        neighbors.forEach(n => existingNeighbors.add(n));
+        this.adjList.set(id, Array.from(existingNeighbors));
+      }
+    }
+
     console.log(`✅ Built adjacency list with ${this.adjList.size} nodes (${userIds.size} users, ${this.adjList.size - userIds.size} products)`);
 
-    // Initialize embeddings for nodes seen
     const nodeIds = Array.from(this.adjList.keys());
     for (let i = 0; i < nodeIds.length; i += BATCH_SIZE_GNN) {
       const batch = nodeIds.slice(i, i + BATCH_SIZE_GNN);
       for (const id of batch) {
-        const emb = tf.randomNormal([this.embeddingSize]);
+        let emb;
         if (userIds.has(id)) {
+          emb = existingUserEmbeddings.get(id) || tf.randomNormal([this.embeddingSize]);
           this.userEmbeddings.set(id, emb);
         } else {
+          emb = existingProductEmbeddings.get(id) || tf.randomNormal([this.embeddingSize]);
           this.productEmbeddings.set(id, emb);
         }
       }
       this.performMemoryCleanup();
     }
 
-    // Train with simplified approach and node sampling if too large
     const n = nodeIds.length;
     const maxNodes = MAX_NODES;
     const usedNodeIds = n > maxNodes ? nodeIds.sort(() => 0.5 - Math.random()).slice(0, maxNodes) : nodeIds;
@@ -533,15 +541,11 @@ class GNNRecommender {
   }
 
   generateLabels(userIdx, prodIdx, nodeIds) {
-    // Create labels based on interaction history
     const labels = tf.zeros([userIdx.length, prodIdx.length]);
     const labelData = labels.bufferSync();
 
-    // This is a simplified version - in practice you'd want to check actual interactions
-    // For now, we'll create random labels for demonstration
     for (let i = 0; i < userIdx.length; i++) {
       for (let j = 0; j < prodIdx.length; j++) {
-        // Random binary labels for now
         labelData.set(Math.random() > 0.5 ? 1 : 0, i, j);
       }
     }
@@ -556,13 +560,11 @@ class GNNRecommender {
       const scoresData = scores.dataSync();
       const learningRate = 0.01;
       
-      // Update user embeddings based on scores
       for (let i = 0; i < userIdx.length; i++) {
         const userId = nodeIds[userIdx[i]];
         const userEmb = this.userEmbeddings.get(userId);
         
         if (userEmb) {
-          // Simple gradient update based on average scores
           const avgScore = Array.from({length: prodIdx.length}, (_, j) => scoresData[i * prodIdx.length + j])
             .reduce((sum, score) => sum + score, 0) / prodIdx.length;
           
@@ -572,13 +574,11 @@ class GNNRecommender {
         }
       }
       
-      // Update product embeddings based on scores
       for (let j = 0; j < prodIdx.length; j++) {
         const prodId = nodeIds[prodIdx[j]];
         const prodEmb = this.productEmbeddings.get(prodId);
         
         if (prodEmb) {
-          // Simple gradient update based on average scores
           const avgScore = Array.from({length: userIdx.length}, (_, i) => scoresData[i * prodIdx.length + j])
             .reduce((sum, score) => sum + score, 0) / userIdx.length;
           
@@ -600,7 +600,6 @@ class GNNRecommender {
     try {
       const learningRate = 0.001;
       
-      // Simple random walk update for all embeddings
       for (const nodeId of nodeIds) {
         if (this.userEmbeddings.has(nodeId)) {
           const currentEmb = this.userEmbeddings.get(nodeId);
@@ -630,13 +629,11 @@ class GNNRecommender {
       console.log('💾 Saving GNN model...');
       const saveStartTime = Date.now();
       
-      // Ensure models directory exists
       console.log('📁 Creating models directory...');
       const modelsDir = path.dirname(this.modelPath);
       await fs.mkdir(modelsDir, { recursive: true });
       console.log(`✅ Models directory ready: ${modelsDir}`);
       
-      // Save model metadata
       console.log('📊 Preparing model metadata...');
       const modelData = {
         isTrained: this.isTrained,
@@ -652,7 +649,6 @@ class GNNRecommender {
       await fs.writeFile(this.modelPath, JSON.stringify(modelData, null, 2));
       console.log(`✅ Model metadata saved to: ${this.modelPath}`);
       
-      // Save embeddings as arrays (convert tensors to arrays)
       console.log('🎲 Converting embeddings to arrays...');
       const embeddingsData = {
         userEmbeddings: {},
@@ -660,12 +656,10 @@ class GNNRecommender {
         adjList: {}
       };
       
-      // Convert user embeddings
       console.log(`🔄 Converting ${this.userEmbeddings.size} user embeddings...`);
       let userCount = 0;
       for (const [id, tensor] of this.userEmbeddings) {
         const values = Array.from(tensor.dataSync()).map(v => (Number.isFinite(v) ? v : 0));
-        // Ensure fixed length
         if (values.length !== this.embeddingSize) {
           const fixed = values.slice(0, this.embeddingSize);
           while (fixed.length < this.embeddingSize) fixed.push(0);
@@ -680,7 +674,6 @@ class GNNRecommender {
       }
       console.log(`✅ Converted ${userCount} user embeddings`);
       
-      // Convert product embeddings
       console.log(`🔄 Converting ${this.productEmbeddings.size} product embeddings...`);
       let productCount = 0;
       for (const [id, tensor] of this.productEmbeddings) {
@@ -699,7 +692,6 @@ class GNNRecommender {
       }
       console.log(`✅ Converted ${productCount} product embeddings`);
       
-      // Convert adjacency list
       console.log(`🔄 Converting ${this.adjList.size} adjacency list entries...`);
       let adjCount = 0;
       for (const [id, neighbors] of this.adjList) {
@@ -733,7 +725,6 @@ class GNNRecommender {
       console.log('📂 Loading GNN model...');
       const loadStartTime = Date.now();
       
-      // Check if model files exist
       console.log('🔍 Checking for saved model files...');
       const modelExists = await fs.access(this.modelPath).then(() => true).catch(() => false);
       const embeddingsExist = await fs.access(this.embeddingsPath).then(() => true).catch(() => false);
@@ -744,7 +735,6 @@ class GNNRecommender {
       }
       console.log('✅ Model files found');
       
-      // Load model metadata
       console.log('📊 Loading model metadata...');
       const modelData = JSON.parse(await fs.readFile(this.modelPath, 'utf8'));
       console.log(`   📅 Model saved at: ${modelData.savedAt}`);
@@ -752,7 +742,6 @@ class GNNRecommender {
       console.log(`   👥 Original user embeddings: ${modelData.userEmbeddingsCount}`);
       console.log(`   🛍️  Original product embeddings: ${modelData.productEmbeddingsCount}`);
       
-      // Check if model is not too old (optional: you can remove this check)
       const modelAge = Date.now() - modelData.lastTrainingTime;
       const ageMinutes = Math.floor(modelAge / (1000 * 60));
       console.log(`   ⏰ Model age: ${ageMinutes} minutes`);
@@ -763,11 +752,9 @@ class GNNRecommender {
       }
       console.log('✅ Model age is acceptable');
       
-      // Load embeddings
       console.log('🎲 Loading embeddings data...');
       const embeddingsData = JSON.parse(await fs.readFile(this.embeddingsPath, 'utf8'));
       
-      // Restore user embeddings
       console.log(`🔄 Restoring ${Object.keys(embeddingsData.userEmbeddings).length} user embeddings...`);
       this.userEmbeddings.clear();
       let userRestoreCount = 0;
@@ -788,7 +775,6 @@ class GNNRecommender {
       }
       console.log(`✅ Restored ${userRestoreCount} user embeddings`);
       
-      // Restore product embeddings
       console.log(`🔄 Restoring ${Object.keys(embeddingsData.productEmbeddings).length} product embeddings...`);
       this.productEmbeddings.clear();
       let productRestoreCount = 0;
@@ -809,7 +795,6 @@ class GNNRecommender {
       }
       console.log(`✅ Restored ${productRestoreCount} product embeddings`);
       
-      // Restore adjacency list
       console.log(`🔄 Restoring ${Object.keys(embeddingsData.adjList).length} adjacency list entries...`);
       this.adjList.clear();
       let adjRestoreCount = 0;
@@ -822,13 +807,11 @@ class GNNRecommender {
       }
       console.log(`✅ Restored ${adjRestoreCount} adjacency list entries`);
       
-      // Restore model state
       console.log('🔧 Restoring model state...');
       this.isTrained = modelData.isTrained;
       this.lastTrainingTime = modelData.lastTrainingTime;
       this.embeddingSize = modelData.embeddingSize;
       
-      // Sanity check: embeddings must exist
       if (this.productEmbeddings.size === 0) {
         console.warn('⚠️  No product embeddings restored. Will retrain.');
         return false;
@@ -848,7 +831,6 @@ class GNNRecommender {
     }
   }
 
-  // Helper method to get age-appropriate categories and styles
   getAgeAppropriateCategories(age) {
     if (!age) return null;
     
@@ -865,7 +847,6 @@ class GNNRecommender {
     }
   }
 
-  // Helper method to analyze user interaction history
   async analyzeInteractionHistory(user) {
     const history = user.interactionHistory || [];
     if (history.length === 0) return { categories: [], brands: [], styles: [] };
@@ -901,12 +882,10 @@ class GNNRecommender {
     };
   }
 
-  // Helper method to calculate personalized score with age, gender, history
   calculatePersonalizedScore(product, user, historyAnalysis, baseScore) {
     let personalizedScore = baseScore;
     const factors = [];
 
-    // Gender filtering
     if (user.gender) {
       const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
         : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
@@ -916,11 +895,10 @@ class GNNRecommender {
         personalizedScore *= 1.3;
         factors.push(`phù hợp với giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}`);
       } else {
-        personalizedScore *= 0.3; // Heavily penalize if gender doesn't match
+        personalizedScore *= 0.3;
       }
     }
 
-    // Age appropriateness
     if (user.age) {
       const ageInfo = this.getAgeAppropriateCategories(user.age);
       if (ageInfo && ageInfo.categories.includes(product.category)) {
@@ -928,14 +906,12 @@ class GNNRecommender {
         factors.push(`phù hợp với độ tuổi ${user.age}`);
       }
       
-      // Style matching
       if (ageInfo && product.outfitTags?.includes(ageInfo.style)) {
         personalizedScore *= 1.15;
         factors.push(`phù hợp với phong cách ${ageInfo.style}`);
       }
     }
 
-    // Interaction history matching
     if (historyAnalysis.categories.includes(product.category)) {
       personalizedScore *= 1.4;
       factors.push(`bạn đã tương tác với danh mục ${product.category}`);
@@ -951,7 +927,6 @@ class GNNRecommender {
       factors.push(`phù hợp với phong cách bạn thích`);
     }
 
-    // User preferences
     if (user.preferences) {
       if (user.preferences.style && product.outfitTags?.includes(user.preferences.style)) {
         personalizedScore *= 1.2;
@@ -977,17 +952,20 @@ class GNNRecommender {
     console.log(`🎯 Starting recommendation for user: ${userId}`);
     const recommendStartTime = Date.now();
     
-    // Try to load saved model first
     if (!this.isTrained) {
       console.log('🔄 Model not trained, attempting to load saved model...');
       const loaded = await this.loadModel();
       if (!loaded) {
+        if (this.strictLoadOnly) {
+          const err = new Error('GNN model not available (strict offline mode). Please run offline training first.');
+          err.statusCode = 503;
+          throw err;
+        }
         console.log('❌ No saved model found, training new model...');
         await this.train();
       }
     }
 
-    // If after load/train we still have no product embeddings, fallback
     if (this.productEmbeddings.size === 0) {
       console.warn('⚠️  No product embeddings available. Falling back to cold-start');
       const cold = await this.recommendColdStart(userId, k);
@@ -1001,14 +979,12 @@ class GNNRecommender {
     }
     console.log(`✅ User found: ${user.email || user._id}`);
 
-    // Analyze interaction history
     console.log('📊 Analyzing user interaction history...');
     const historyAnalysis = await this.analyzeInteractionHistory(user);
 
     const userIdStr = userId.toString();
     let userEmb = this.userEmbeddings.get(userIdStr);
     
-    // If user wasn't in the training set (due to sampling), create a random embedding
     if (!userEmb) {
       console.log(`⚠️  User ${userIdStr} not in training set, using random embedding`);
       userEmb = tf.randomNormal([this.embeddingSize]);
@@ -1019,41 +995,58 @@ class GNNRecommender {
 
     console.log(`🔢 Computing scores for ${this.productEmbeddings.size} products...`);
     
-    // Get all product IDs and embeddings
     const allProductIds = Array.from(this.productEmbeddings.keys());
-    const productEmbeddingsArray = allProductIds.map(id => this.productEmbeddings.get(id));
     
-    // Batch compute all base scores at once (much faster than individual matrix multiplications)
+    if (allProductIds.length === 0) {
+      console.warn('⚠️  No product embeddings available. Falling back to cold-start');
+      const cold = await this.recommendColdStart(userId, k);
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding, sử dụng sản phẩm phổ biến nhất' };
+    }
+    
+    const validEmbeddings = [];
+    const validProductIds = [];
+    for (let i = 0; i < allProductIds.length; i++) {
+      const emb = this.productEmbeddings.get(allProductIds[i]);
+      if (emb != null) {
+        validEmbeddings.push(emb);
+        validProductIds.push(allProductIds[i]);
+      }
+    }
+    
+    if (validEmbeddings.length === 0) {
+      console.warn('⚠️  No valid product embeddings available. Falling back to cold-start');
+      const cold = await this.recommendColdStart(userId, k);
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding hợp lệ, sử dụng sản phẩm phổ biến nhất' };
+    }
+    
     console.log('   📊 Computing base scores in batch...');
     const userEmbMatrix = userEmb.reshape([1, -1]);
-    const productEmbMatrix = tf.stack(productEmbeddingsArray); // Shape: [numProducts, embeddingSize]
-    const baseScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync(); // Shape: [1, numProducts]
+    const productEmbMatrix = tf.stack(validEmbeddings);
+    const baseScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync();
     
-    // Get top candidates based on base scores (before expensive personalization)
-    // Use a larger candidate pool (k * 3) to ensure we have enough after filtering
-    const candidatePoolSize = Math.min(k * 3, allProductIds.length);
-    const scoreIndexPairs = Array.from({length: allProductIds.length}, (_, i) => ({
+    const candidatePoolSize = Math.min(k * 3, validProductIds.length);
+    const scoreIndexPairs = Array.from({length: validProductIds.length}, (_, i) => ({
       score: baseScores[i],
       index: i
     }));
     
-    // Partial sort to get top candidates (much faster than full sort)
     scoreIndexPairs.sort((a, b) => b.score - a.score);
     const topCandidateIndices = scoreIndexPairs.slice(0, candidatePoolSize).map(pair => pair.index);
-    const topCandidateIds = topCandidateIndices.map(i => allProductIds[i]);
+    const topCandidateIds = topCandidateIndices.map(i => validProductIds[i]);
     
     console.log(`   ✅ Selected ${topCandidateIds.length} top candidates for personalization`);
     
-    // Fetch only candidate products from database
-    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } }).lean();
+    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } })
+      .select('_id name description images price sale category brand outfitTags colors')
+      .lean();
     const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
     
-    // Compute personalized scores only for candidates
     const scoredProducts = [];
     for (const idx of topCandidateIndices) {
-      const prodId = allProductIds[idx];
+      const prodId = validProductIds[idx];
       const product = productMap.get(prodId);
       if (!product) continue;
+      if (this.violatesGenderKeywords(user, product)) continue;
       
       const baseScore = baseScores[idx];
       const { score, factors } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
@@ -1079,7 +1072,6 @@ class GNNRecommender {
     const outfits = await this.generateOutfits(topProducts, user);
     console.log(`✅ Generated ${outfits.length} outfit recommendations`);
 
-    // Generate explanation
     const explanation = this.generateExplanation(user, historyAnalysis, topProducts);
 
     const recommendEndTime = Date.now() - recommendStartTime;
@@ -1092,7 +1084,6 @@ class GNNRecommender {
     return { products: topProducts, outfits, model: 'GNN (GCN)', explanation };
   }
 
-  // Generate explanation for recommendations
   generateExplanation(user, historyAnalysis, products) {
     const reasons = [];
     
@@ -1129,10 +1120,25 @@ class GNNRecommender {
     return reasons.length > 0 ? reasons.join('. ') : 'Dựa trên mô hình GNN phân tích đồ thị tương tác người dùng và sản phẩm';
   }
 
-  async recommendPersonalize(userId, k = 10) {
-    // 尝试个性化；若无历史则回退冷启动
+  async recommendPersonalize(userId, k = 10, opts = {}) {
     try {
       const result = await this.recommend(userId, k);
+
+      const { productId } = opts || {};
+      if (productId && Array.isArray(result.products) && result.products.length > 0) {
+        try {
+          const seed = await Product.findById(productId).select('_id category').lean();
+          if (seed) {
+            const sameCategory = [];
+            const others = [];
+            for (const p of result.products) {
+              if (p && p.category === seed.category) sameCategory.push(p); else others.push(p);
+            }
+            result.products = [...sameCategory, ...others].slice(0, k);
+            result.explanation = `${result.explanation || ''}${result.explanation ? '. ' : ''}Ưu tiên sản phẩm cùng danh mục với sản phẩm đang xem`;
+          }
+        } catch (_) { }
+      }
       return { 
         products: result.products, 
         model: result.model, 
@@ -1169,7 +1175,21 @@ class GNNRecommender {
     } catch (_) {}
 
     const query = genderAllow ? { category: { $in: Array.from(genderAllow) } } : {};
+
+    const userForCold = await User.findById(userId).select('gender');
+    if (userForCold && userForCold.gender) {
+      const femaleRegex = /(female|woman|women|ladies|girl|girls|she|her)/i;
+      const maleRegex = /(male|man|men|gentleman|gents|boy|boys|he|him|his)/i;
+      const exclusion = userForCold.gender === 'male'
+        ? { $and: [ { name: { $not: femaleRegex } }, { description: { $not: femaleRegex } } ] }
+        : userForCold.gender === 'female'
+          ? { $and: [ { name: { $not: maleRegex } }, { description: { $not: maleRegex } } ] }
+          : {};
+      Object.assign(query, exclusion);
+    }
+
     const products = await Product.find(query)
+      .select('_id name description images price sale category brand outfitTags colors')
       .sort({ rating: -1 })
       .limit(k)
       .setOptions({ allowDiskUse: true })
@@ -1178,7 +1198,6 @@ class GNNRecommender {
   }
 
   async recommendOutfits(userId, { productId = null, k = 12 } = {}) {
-    // Must have gender and interaction history; and a selected seed product
     const user = await this.ensureUserWithHistory(userId, { requireGender: true });
     if (!productId) {
       throw new Error('productId is required to build outfit');
@@ -1186,7 +1205,14 @@ class GNNRecommender {
 
     if (!this.isTrained) {
       const loaded = await this.loadModel();
-      if (!loaded) await this.train();
+      if (!loaded) {
+        if (this.strictLoadOnly) {
+          const err = new Error('GNN model not available (strict offline mode). Please run offline training first.');
+          err.statusCode = 503;
+          throw err;
+        }
+        await this.train();
+      }
     }
 
     const userIdStr = userId.toString();
@@ -1196,81 +1222,89 @@ class GNNRecommender {
       this.userEmbeddings.set(userIdStr, userEmb);
     }
 
-    // Analyze interaction history
     const historyAnalysis = await this.analyzeInteractionHistory(user);
 
-    // Collect user history categories
     const historyIds = (user.interactionHistory || []).map(i => i.productId);
     const historyProducts = historyIds.length > 0 ? await Product.find({ _id: { $in: historyIds } }).select('_id category').lean() : [];
     const preferredCategories = new Set(historyProducts.map(p => p.category));
 
-    // Compute scores across products with personalization (optimized batch computation)
     const allProductIds = Array.from(this.productEmbeddings.keys());
-    const productEmbeddingsArray = allProductIds.map(id => this.productEmbeddings.get(id));
     
-    // Batch compute all base scores at once
+    if (allProductIds.length === 0) {
+      console.warn('⚠️  No product embeddings available for outfit recommendations');
+      throw new Error('No product embeddings available. Please train the model first.');
+    }
+    
+    const validEmbeddings = [];
+    const validProductIds = [];
+    for (let i = 0; i < allProductIds.length; i++) {
+      const emb = this.productEmbeddings.get(allProductIds[i]);
+      if (emb != null) {
+        validEmbeddings.push(emb);
+        validProductIds.push(allProductIds[i]);
+      }
+    }
+    
+    if (validEmbeddings.length === 0) {
+      console.warn('⚠️  No valid product embeddings available for outfit recommendations');
+      throw new Error('No valid product embeddings available. Please train the model first.');
+    }
+    
     const userEmbMatrix = userEmb.reshape([1, -1]);
-    const productEmbMatrix = tf.stack(productEmbeddingsArray);
+    const productEmbMatrix = tf.stack(validEmbeddings);
     const baseScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync();
     
-    // Get top candidates (k * 3 for outfit recommendations to have more options)
-    const candidatePoolSize = Math.min(k * 3, allProductIds.length);
-    const scoreIndexPairs = Array.from({length: allProductIds.length}, (_, i) => ({
+    const candidatePoolSize = Math.min(k * 3, validProductIds.length);
+    const scoreIndexPairs = Array.from({length: validProductIds.length}, (_, i) => ({
       score: baseScores[i],
       index: i
     }));
     scoreIndexPairs.sort((a, b) => b.score - a.score);
     const topCandidateIndices = scoreIndexPairs.slice(0, candidatePoolSize).map(pair => pair.index);
-    const topCandidateIds = topCandidateIndices.map(i => allProductIds[i]);
+    const topCandidateIds = topCandidateIndices.map(i => validProductIds[i]);
     
-    // Fetch only candidate products
-    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } }).lean();
+    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } })
+      .select('_id name description images price sale category brand outfitTags colors')
+      .lean();
     const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
     
-    // Compute personalized scores only for candidates
     const scoredProducts = [];
     for (const idx of topCandidateIndices) {
-      const prodId = allProductIds[idx];
+      const prodId = validProductIds[idx];
       const product = productMap.get(prodId);
       if (!product) continue;
+      if (this.violatesGenderKeywords(user, product)) continue;
       
       const baseScore = baseScores[idx];
       const { score } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
       scoredProducts.push({ product, score });
     }
     
-    // Rank products
     scoredProducts.sort((a, b) => b.score - a.score);
     let rankedProducts = scoredProducts.map(item => item.product);
 
-    // Gender filter
     const gender = user.gender;
     const genderAllow = gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
                       : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
                       : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
 
-    // Filter by gender and prioritize preferred categories
-    let filtered = rankedProducts.filter(p => genderAllow.has(p.category));
+    let filtered = rankedProducts.filter(p => genderAllow.has(p.category) && !this.violatesGenderKeywords(user, p));
     if (preferredCategories.size > 0) {
       filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
     }
 
-    // Use the required productId as seed and prioritize category-matching items
-    let seedProduct = await Product.findById(productId).lean();
+    let seedProduct = await Product.findById(productId).select('_id name description images category price sale brand outfitTags colors').lean();
     if (seedProduct) {
       filtered = [seedProduct, ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), ...filtered.filter(p => p.category !== seedProduct.category)];
     }
 
     const topProducts = filtered.slice(0, Math.max(k * 2, 20));
     const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
-    
-    // Generate explanation
     const explanation = this.generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis);
     
     return { outfits, model: 'GNN (GCN)', timestamp: new Date().toISOString(), explanation };
   }
 
-  // Generate explanation for outfit recommendations
   generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis) {
     const reasons = [];
     
@@ -1302,15 +1336,13 @@ class GNNRecommender {
   }
 
   calculateOutfitCompatibility(products) {
-    // Simple heuristic: prefer diverse categories and moderate total price
     const categories = new Set(products.map(p => p.category));
     const diversity = Math.min(1, categories.size / 3);
     const total = products.reduce((s, p) => s + (p.price || 0), 0);
-    const priceScore = total > 0 ? Math.max(0, 1 - Math.abs(total - 200) / 400) : 0.5; // favor around 200
+    const priceScore = total > 0 ? Math.max(0, 1 - Math.abs(total - 200) / 400) : 0.5;
     return Math.min(1, 0.6 * diversity + 0.4 * priceScore);
   }
 
-  // Build outfits that must include the selected seed product
   async generateOutfitsFromSeed(products, user, seedProduct, k = 12) {
     const outfits = [];
     const gender = user.gender || 'other';
@@ -1349,7 +1381,6 @@ class GNNRecommender {
     };
 
     if (gender === 'male' || gender === 'other') {
-      // Aim for Top + Bottom + Shoes including seed
       const seedAsTop = isTop(seedProduct);
       const seedAsBottom = isBottom(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
@@ -1366,7 +1397,6 @@ class GNNRecommender {
     }
 
     if (gender === 'female') {
-      // Aim for Dress + Accessories + Shoes including seed
       const seedAsDress = isDress(seedProduct);
       const seedAsAcc = isAccessory(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
@@ -1382,7 +1412,6 @@ class GNNRecommender {
       }
     }
 
-    // Deduplicate outfits by product sets
     const seenKeys = new Set();
     const deduped = [];
     for (const o of outfits) {
@@ -1496,36 +1525,29 @@ class GNNRecommender {
     return outfits;
   }
 
-  // Memory management methods
   performMemoryCleanup() {
     this.memoryStats.operationsCount++;
     
-    // Force garbage collection if available
     if (global.gc) {
       global.gc();
     }
     
-    // Update memory stats
     const memUsage = process.memoryUsage();
     this.memoryStats.currentMemory = memUsage.heapUsed;
     this.memoryStats.peakMemory = Math.max(this.memoryStats.peakMemory, memUsage.heapUsed);
     
-    // Log memory usage every 50 operations
     if (this.memoryStats.operationsCount % 50 === 0) {
       console.log(`🧹 Memory cleanup - Current: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, Peak: ${Math.round(this.memoryStats.peakMemory / 1024 / 1024)}MB`);
     }
   }
 
-  // Method to clear large data structures
   clearMemory() {
     console.log('🧹 Clearing GNN memory...');
     
-    // Clear embeddings
     this.userEmbeddings.clear();
     this.productEmbeddings.clear();
     this.adjList.clear();
     
-    // Force garbage collection
     if (global.gc) {
       global.gc();
     }
@@ -1533,7 +1555,6 @@ class GNNRecommender {
     console.log('✅ GNN memory cleared successfully');
   }
 
-  // Method to get memory statistics
   getMemoryStats() {
     const memUsage = process.memoryUsage();
     return {

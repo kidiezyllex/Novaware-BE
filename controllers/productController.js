@@ -30,7 +30,7 @@ const getProducts = asyncHandler(async (req, res) => {
     if (req.query.option === "all") {
       // Trả về các trường cần thiết
       const products = await Product.find({})
-        .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
+        .select("-featureVector")
         .maxTimeMS(30000)
         .lean();
       
@@ -59,7 +59,7 @@ const getProducts = asyncHandler(async (req, res) => {
       const [count, products] = await Promise.all([
         Product.countDocuments({ ...keyword }).maxTimeMS(30000),
         Product.find({ ...keyword })
-          .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
+          .select("-featureVector")
           .limit(perPage)
           .skip(perPage * (page - 1))
           .maxTimeMS(30000)
@@ -90,7 +90,7 @@ const getProducts = asyncHandler(async (req, res) => {
 
 const getProductById = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id)
-    .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector");
+    .select("-featureVector");
   if (product) {
     sendSuccess(res, 200, "Product retrieved successfully", { product });
   } else {
@@ -248,12 +248,11 @@ const getTopProducts = asyncHandler(async (req, res) => {
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
     .allowDiskUse(true)
-    .maxTimeMS(30000);
+    .option({ maxTimeMS: 30000 });
 
   sendSuccess(res, 200, "Top products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -287,12 +286,11 @@ const getLatestProducts = asyncHandler(async (req, res) => {
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
     .allowDiskUse(true)
-    .maxTimeMS(30000);
+    .option({ maxTimeMS: 30000 });
 
   sendSuccess(res, 200, "Latest products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -327,12 +325,11 @@ const getSaleProducts = asyncHandler(async (req, res) => {
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        featureVector: 0, // Không trả về featureVector
       },
     },
   ])
     .allowDiskUse(true)
-    .maxTimeMS(30000);
+    .option({ maxTimeMS: 30000 });
 
   sendSuccess(res, 200, "Sale products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
 });
@@ -348,7 +345,7 @@ const getRelatedProducts = asyncHandler(async (req, res) => {
     category,
     _id: { $ne: new mongoose.Types.ObjectId(excludeId) }, // ép kiểu đúng
   })
-    .select("_id name price sale images brand category description rating numReviews countInStock size colors user reviews outfitTags compatibleProducts createdAt updatedAt -featureVector")
+    .select("-featureVector")
     .sort({ rating: -1 })
     .limit(4)
     .maxTimeMS(30000)
@@ -398,7 +395,6 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
         priceSale: {
           $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
         },
-        featureVector: 0, // Không trả về featureVector
       },
     },
     { $sort: { priceSale: sortBy === "asc" ? 1 : -1 } },
@@ -406,7 +402,7 @@ const getSortByPriceProducts = asyncHandler(async (req, res) => {
     { $limit: perPage },
   ])
     .allowDiskUse(true)
-    .maxTimeMS(30000);
+    .option({ maxTimeMS: 30000 });
 
   sendSuccess(res, 200, "Products sorted by price retrieved successfully", { page, pages: Math.ceil(count / perPage), products, count });
 });
@@ -549,7 +545,7 @@ const filterProducts = asyncHandler(async (req, res) => {
         createdAt: 1,
         updatedAt: 1,
         priceSale: 1,
-        featureVector: 0, // Không trả về featureVector
+        // featureVector không được liệt kê nên sẽ không được trả về
       },
     },
   ];
@@ -560,8 +556,8 @@ const filterProducts = asyncHandler(async (req, res) => {
   ];
 
   const [products, countQuery] = await Promise.all([
-    Product.aggregate(dataPipeline).allowDiskUse(true).maxTimeMS(30000),
-    Product.aggregate(countPipeline).allowDiskUse(true).maxTimeMS(30000),
+    Product.aggregate(dataPipeline).allowDiskUse(true).option({ maxTimeMS: 30000 }),
+    Product.aggregate(countPipeline).allowDiskUse(true).option({ maxTimeMS: 30000 }),
   ]);
 
   const totalCount = countQuery.length > 0 ? countQuery[0].count : 0;

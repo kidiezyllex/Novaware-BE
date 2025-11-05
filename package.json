@@ -11,6 +11,8 @@
     "data:import": "node --max-old-space-size=4096 seeder.js",
     "data:destroy": "node --max-old-space-size=4096 seeder.js -d",
     "migrate:products": "node --max-old-space-size=4096 scripts/migrateProducts.js",
+    "train:models": "node --max-old-space-size=4096 scripts/trainModels.js",
+    "delete:products-no-reviews": "node --max-old-space-size=4096 scripts/deleteProductsWithoutReviews.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

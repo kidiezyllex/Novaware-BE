@@ -342,6 +342,81 @@ class HybridRecommender {
     return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
   }
 
+  // Helper method to get age-appropriate categories and styles
+  getAgeAppropriateCategories(age) {
+    if (!age) return null;
+    
+    if (age >= 13 && age <= 18) {
+      return { style: 'casual', categories: ['Tops', 'Bottoms', 'Shoes', 'Accessories'] };
+    } else if (age >= 19 && age <= 25) {
+      return { style: 'modern', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else if (age >= 26 && age <= 35) {
+      return { style: 'professional', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else if (age >= 36 && age <= 50) {
+      return { style: 'classic', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else {
+      return { style: 'traditional', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    }
+  }
+
+  // Helper method to analyze user interaction history
+  async analyzeInteractionHistory(user) {
+    const history = user.interactionHistory || [];
+    if (history.length === 0) return { categories: [], brands: [], styles: [] };
+
+    const historyIds = history.map(i => i.productId);
+    const products = await Product.find({ _id: { $in: historyIds } })
+      .select('category brand outfitTags')
+      .lean();
+
+    const categories = new Map();
+    const brands = new Map();
+    const styles = new Map();
+
+    products.forEach((product, index) => {
+      const interaction = history[index];
+      const weight = interaction.interactionType === 'purchase' ? 3 : 
+                     interaction.interactionType === 'cart' ? 2 : 
+                     interaction.interactionType === 'like' ? 1.5 : 1;
+
+      categories.set(product.category, (categories.get(product.category) || 0) + weight);
+      brands.set(product.brand, (brands.get(product.brand) || 0) + weight);
+      if (product.outfitTags) {
+        product.outfitTags.forEach(tag => {
+          styles.set(tag, (styles.get(tag) || 0) + weight);
+        });
+      }
+    });
+
+    return {
+      categories: Array.from(categories.entries()).sort((a, b) => b[1] - a[1]).map(([cat]) => cat),
+      brands: Array.from(brands.entries()).sort((a, b) => b[1] - a[1]).map(([brand]) => brand),
+      styles: Array.from(styles.entries()).sort((a, b) => b[1] - a[1]).map(([style]) => style)
+    };
+  }
+
+  // Calculate age-based score adjustment
+  calculateAgeScore(product, user) {
+    if (!user.age) return 1.0;
+    
+    const ageInfo = this.getAgeAppropriateCategories(user.age);
+    if (!ageInfo) return 1.0;
+    
+    let score = 1.0;
+    
+    // Category match
+    if (ageInfo.categories.includes(product.category)) {
+      score *= 1.2;
+    }
+    
+    // Style match
+    if (ageInfo.style && product.outfitTags?.includes(ageInfo.style)) {
+      score *= 1.15;
+    }
+    
+    return score;
+  }
+
   async recommend(userId, k = 10) {
     if (!this.isTrained) {
       await this.train();
@@ -357,7 +432,10 @@ class HybridRecommender {
       throw new Error('User not found in training data');
     }
     
-    const personalizedProducts = await this.getPersonalizedProducts(user, k);
+    // Analyze interaction history
+    const historyAnalysis = await this.analyzeInteractionHistory(user);
+    
+    const personalizedProducts = await this.getPersonalizedProducts(user, k * 2);
     
     const scoredProducts = [];
     
@@ -367,12 +445,41 @@ class HybridRecommender {
       
       const cfScore = this.computeCollaborativeScore(userIndex, itemIndex);
       const cbScore = this.computeContentBasedScore(user, product);
-      const hybridScore = (this.cfWeight * cfScore) + (this.cbWeight * cbScore);
+      let hybridScore = (this.cfWeight * cfScore) + (this.cbWeight * cbScore);
+      
+      // Apply age-based scoring
+      hybridScore *= this.calculateAgeScore(product, user);
+      
+      // Gender filtering
+      if (user.gender) {
+        const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+          : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+          : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+        
+        if (genderAllow.has(product.category)) {
+          hybridScore *= 1.3;
+        } else {
+          hybridScore *= 0.3; // Heavily penalize if gender doesn't match
+        }
+      }
       
       let personalizedScore = hybridScore;
       
       const historySimilarity = this.calculateHistorySimilarity(user, product);
       personalizedScore += historySimilarity * 0.3;
+      
+      // History-based boosts
+      if (historyAnalysis.categories.includes(product.category)) {
+        personalizedScore *= 1.4;
+      }
+      
+      if (historyAnalysis.brands.includes(product.brand)) {
+        personalizedScore *= 1.3;
+      }
+      
+      if (historyAnalysis.styles.some(style => product.outfitTags?.includes(style))) {
+        personalizedScore *= 1.25;
+      }
       
       if (user.preferences) {
         if (user.preferences.style && product.outfitTags?.includes(user.preferences.style)) {
@@ -406,6 +513,9 @@ class HybridRecommender {
     
     const outfits = await this.generateGenderSpecificOutfits(topProducts, user);
     
+    // Generate explanation
+    const explanation = this.generateExplanation(user, historyAnalysis, topProducts);
+    
     return {
       products: topProducts,
       outfits: outfits,
@@ -414,7 +524,8 @@ class HybridRecommender {
       cbWeight: this.cbWeight,
       personalization: 'Based on interaction history and preferences',
       outfitType: user.gender === 'male' ? 'Men\'s outfits (shirt + pants + shoes)' : 'Women\'s outfits (dress + accessories)',
-      timestamp: new Date()
+      timestamp: new Date(),
+      explanation
     };
   }
 
@@ -790,6 +901,426 @@ class HybridRecommender {
     }
     
     return comparisons > 0 ? totalCompatibility / comparisons : 0.5;
+  }
+
+  // Generate explanation for recommendations
+  generateExplanation(user, historyAnalysis, products) {
+    const reasons = [];
+    
+    if (user.gender) {
+      reasons.push(`Dựa trên giới tính ${user.gender === 'male' ? 'nam' : 'nữ'} của bạn`);
+    }
+    
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo) {
+        reasons.push(`Phù hợp với độ tuổi ${user.age} và phong cách ${ageInfo.style}`);
+      }
+    }
+    
+    if (historyAnalysis.categories.length > 0) {
+      const topCategories = historyAnalysis.categories.slice(0, 3).join(', ');
+      reasons.push(`Dựa trên lịch sử tương tác với các danh mục: ${topCategories}`);
+    }
+    
+    if (historyAnalysis.brands.length > 0) {
+      const topBrands = historyAnalysis.brands.slice(0, 2).join(', ');
+      reasons.push(`Bạn đã quan tâm đến thương hiệu: ${topBrands}`);
+    }
+    
+    if (user.preferences?.style) {
+      reasons.push(`Phù hợp với phong cách ${user.preferences.style} bạn yêu thích`);
+    }
+    
+    reasons.push(`Kết hợp Collaborative Filtering (${(this.cfWeight * 100).toFixed(0)}%) và Content-Based Filtering (${(this.cbWeight * 100).toFixed(0)}%)`);
+    
+    if (products.length > 0) {
+      const categories = [...new Set(products.map(p => p.category))];
+      reasons.push(`Gợi ý ${products.length} sản phẩm từ các danh mục: ${categories.join(', ')}`);
+    }
+    
+    return reasons.length > 0 ? reasons.join('. ') : 'Dựa trên mô hình Hybrid kết hợp Collaborative và Content-Based Filtering';
+  }
+
+  async recommendPersonalize(userId, k = 10) {
+    // Try personalized recommendation; fallback to cold start if no history
+    try {
+      const result = await this.recommend(userId, k);
+      return { 
+        products: result.products, 
+        outfits: result.outfits,
+        model: result.model, 
+        timestamp: new Date().toISOString(),
+        explanation: result.explanation || ''
+      };
+    } catch (error) {
+      const msg = (error && error.message) ? error.message : '';
+      const isColdStartCase = msg.includes('not found in training data') || msg.includes('User not found') || msg.includes('no interaction history');
+      if (!isColdStartCase) throw error;
+      
+      // Cold start fallback
+      const user = await User.findById(userId).select('gender age');
+      let genderAllow = null;
+      if (user && user.gender) {
+        genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+          : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+          : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+      }
+      
+      const query = genderAllow ? { category: { $in: Array.from(genderAllow) } } : {};
+      const products = await Product.find(query)
+        .sort({ rating: -1 })
+        .limit(k)
+        .setOptions({ allowDiskUse: true })
+        .lean();
+      
+      const coldExplanation = user 
+        ? `Dựa trên ${user.gender ? `giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}` : ''} ${user.age ? `độ tuổi ${user.age}` : ''}. Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác`
+        : 'Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác';
+      
+      return { 
+        products, 
+        outfits: [], 
+        model: 'ColdStart (TopRated)', 
+        timestamp: new Date().toISOString(),
+        explanation: coldExplanation
+      };
+    }
+  }
+
+  // Generate explanation for outfit recommendations
+  generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis) {
+    const reasons = [];
+    
+    if (seedProduct) {
+      reasons.push(`Dựa trên sản phẩm bạn chọn: ${seedProduct.name} (${seedProduct.category})`);
+    }
+    
+    if (user.gender) {
+      const genderText = user.gender === 'male' ? 'nam' : user.gender === 'female' ? 'nữ' : 'unisex';
+      reasons.push(`Phối đồ phù hợp cho giới tính ${genderText}`);
+    }
+    
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo) {
+        reasons.push(`Phong cách ${ageInfo.style} phù hợp với độ tuổi ${user.age}`);
+      }
+    }
+    
+    if (historyAnalysis.styles.length > 0) {
+      reasons.push(`Kết hợp phong cách bạn thường chọn: ${historyAnalysis.styles.slice(0, 2).join(', ')}`);
+    }
+    
+    reasons.push(`Sử dụng mô hình Hybrid (CF ${(this.cfWeight * 100).toFixed(0)}% + CB ${(this.cbWeight * 100).toFixed(0)}%) để phân tích tương thích`);
+    
+    if (outfits.length > 0) {
+      reasons.push(`Tạo ${outfits.length} bộ phối đồ hoàn chỉnh với độ tương thích cao`);
+    }
+    
+    return reasons.length > 0 ? reasons.join('. ') : 'Phối đồ dựa trên sản phẩm bạn chọn và mô hình Hybrid phân tích tương thích';
+  }
+
+  async recommendOutfits(userId, { productId = null, k = 12 } = {}) {
+    // Must have gender and interaction history; and a selected seed product
+    const user = await User.findById(userId).select('_id interactionHistory preferences gender age');
+    if (!user) {
+      throw new Error('User not found');
+    }
+    
+    if (!user.interactionHistory || user.interactionHistory.length === 0) {
+      throw new Error('User has no interaction history');
+    }
+    
+    if (!user.gender) {
+      throw new Error('User gender is required');
+    }
+    
+    if (!productId) {
+      throw new Error('productId is required to build outfit');
+    }
+
+    if (!this.isTrained) {
+      await this.train();
+    }
+
+    const userIndex = this.userIndexMap.get(userId.toString());
+    if (userIndex === undefined) {
+      throw new Error('User not found in training data');
+    }
+
+    // Analyze interaction history
+    const historyAnalysis = await this.analyzeInteractionHistory(user);
+
+    // Collect user history categories
+    const historyIds = (user.interactionHistory || []).map(i => i.productId);
+    const historyProducts = historyIds.length > 0 ? await Product.find({ _id: { $in: historyIds } }).select('_id category').lean() : [];
+    const preferredCategories = new Set(historyProducts.map(p => p.category));
+
+    // Get seed product
+    const seedProduct = await Product.findById(productId).lean();
+    if (!seedProduct) {
+      throw new Error('Seed product not found');
+    }
+
+    // Get personalized products similar to the seed
+    const personalizedProducts = await this.getPersonalizedProducts(user, k * 3);
+    
+    // Compute scores for products with personalization
+    const scoredProducts = [];
+    for (const product of personalizedProducts) {
+      const itemIndex = this.itemIndexMap.get(product._id.toString());
+      if (itemIndex === undefined) continue;
+      
+      let cfScore = this.computeCollaborativeScore(userIndex, itemIndex);
+      let cbScore = this.computeContentBasedScore(user, product);
+      let hybridScore = (this.cfWeight * cfScore) + (this.cbWeight * cbScore);
+      
+      // Apply age-based scoring
+      hybridScore *= this.calculateAgeScore(product, user);
+      
+      // Gender filtering
+      if (user.gender) {
+        const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+          : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+          : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+        
+        if (genderAllow.has(product.category)) {
+          hybridScore *= 1.3;
+        } else {
+          hybridScore *= 0.3;
+        }
+      }
+      
+      // Boost score if same category as seed
+      let finalScore = hybridScore;
+      if (product.category === seedProduct.category) {
+        finalScore *= 1.3;
+      }
+      
+      // History-based boosts
+      if (historyAnalysis.categories.includes(product.category)) {
+        finalScore *= 1.4;
+      }
+      
+      if (historyAnalysis.brands.includes(product.brand)) {
+        finalScore *= 1.3;
+      }
+      
+      scoredProducts.push({
+        product: product,
+        score: finalScore
+      });
+    }
+
+    // Rank products
+    const rankedProducts = scoredProducts
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.product);
+
+    // Gender filter
+    const gender = user.gender;
+    const genderAllow = gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+                      : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+                      : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+
+    // Filter by gender and prioritize preferred categories
+    let filtered = rankedProducts.filter(p => genderAllow.has(p.category));
+    if (preferredCategories.size > 0) {
+      filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
+    }
+
+    // Use the required productId as seed and prioritize category-matching items
+    filtered = [
+      seedProduct, 
+      ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), 
+      ...filtered.filter(p => p.category !== seedProduct.category)
+    ];
+
+    const topProducts = filtered.slice(0, Math.max(k * 2, 20));
+    const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
+    
+    // Generate explanation
+    const explanation = this.generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis);
+    
+    return { 
+      outfits, 
+      model: 'Hybrid', 
+      timestamp: new Date().toISOString(),
+      explanation
+    };
+  }
+
+  // Build outfits that must include the selected seed product
+  async generateOutfitsFromSeed(products, user, seedProduct, k = 12) {
+    const outfits = [];
+    const gender = user.gender || 'other';
+    if (!seedProduct) return outfits;
+
+    const isTop = (p) => p.category === 'Tops' || p.outfitTags?.includes('top') || p.outfitTags?.includes('shirt');
+    const isBottom = (p) => p.category === 'Bottoms' || p.outfitTags?.includes('bottom') || p.outfitTags?.includes('pants');
+    const isShoe = (p) => p.category === 'Shoes' || p.outfitTags?.includes('shoes');
+    const isDress = (p) => p.category === 'Dresses' || p.outfitTags?.includes('dress');
+    const isAccessory = (p) => p.category === 'Accessories' || p.outfitTags?.includes('accessory');
+
+    const pool = (predicate, excludeIds = new Set([seedProduct._id.toString()])) => {
+      return products.filter(p => predicate(p) && !excludeIds.has(p._id.toString()));
+    };
+
+    const pushOutfit = (parts, namePrefix, desc) => {
+      const unique = [];
+      const seen = new Set();
+      for (const p of parts) {
+        if (p && !seen.has(p._id.toString())) {
+          unique.push(p);
+          seen.add(p._id.toString());
+        }
+      }
+      if (unique.length >= 2) {
+        outfits.push({
+          name: `${namePrefix} ${outfits.length + 1}`,
+          products: unique,
+          style: user.preferences?.style || 'casual',
+          totalPrice: unique.reduce((s, p) => s + (p.price || 0), 0),
+          compatibilityScore: this.calculateOutfitCompatibility(unique),
+          gender,
+          description: desc
+        });
+      }
+    };
+
+    if (gender === 'male' || gender === 'other') {
+      // Aim for Top + Bottom + Shoes including seed
+      const seedAsTop = isTop(seedProduct);
+      const seedAsBottom = isBottom(seedProduct);
+      const seedAsShoes = isShoe(seedProduct);
+
+      for (let i = 0; i < Math.min(5, k); i++) {
+        const exclude = new Set([seedProduct._id.toString()]);
+        const top = seedAsTop ? seedProduct : pool(isTop, exclude)[Math.floor(Math.random() * Math.max(1, pool(isTop, exclude).length))];
+        if (top) exclude.add(top._id.toString());
+        const bottom = seedAsBottom ? seedProduct : pool(isBottom, exclude)[Math.floor(Math.random() * Math.max(1, pool(isBottom, exclude).length))];
+        if (bottom) exclude.add(bottom._id.toString());
+        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
+        pushOutfit([seedProduct, top, bottom, shoes], "Men's Outfit", 'Top + Bottom + Shoes');
+      }
+    }
+
+    if (gender === 'female') {
+      // Aim for Dress + Accessories + Shoes including seed
+      const seedAsDress = isDress(seedProduct);
+      const seedAsAcc = isAccessory(seedProduct);
+      const seedAsShoes = isShoe(seedProduct);
+
+      for (let i = 0; i < Math.min(5, k); i++) {
+        const exclude = new Set([seedProduct._id.toString()]);
+        const dress = seedAsDress ? seedProduct : pool(isDress, exclude)[Math.floor(Math.random() * Math.max(1, pool(isDress, exclude).length))];
+        if (dress) exclude.add(dress._id.toString());
+        const acc = seedAsAcc ? seedProduct : pool(isAccessory, exclude)[Math.floor(Math.random() * Math.max(1, pool(isAccessory, exclude).length))];
+        if (acc) exclude.add(acc._id.toString());
+        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
+        pushOutfit([seedProduct, dress, acc, shoes], "Women's Outfit", 'Dress + Accessories + Shoes');
+      }
+    }
+
+    // Deduplicate outfits by product sets
+    const seenKeys = new Set();
+    const deduped = [];
+    for (const o of outfits) {
+      const key = o.products.map(p => p._id.toString()).sort().join('|');
+      if (!seenKeys.has(key)) { 
+        seenKeys.add(key); 
+        deduped.push(o); 
+      }
+    }
+    return deduped.slice(0, k);
+  }
+
+  async trainIncremental() {
+    console.log('🚀 Starting incremental Hybrid training...');
+    const startTime = Date.now();
+
+    // Reset structures
+    this.userIndexMap.clear();
+    this.itemIndexMap.clear();
+    this.userItemMatrix = null;
+    this.userSimilarityMatrix = null;
+    this.itemSimilarityMatrix = null;
+
+    // Count documents
+    const usersCount = await User.countDocuments({ 'interactionHistory.0': { $exists: true } });
+    const productsCount = await Product.countDocuments({});
+    console.log(`📊 Counts → users(with history): ${usersCount}, products: ${productsCount}`);
+
+    // Page through users to build user index map
+    const usersList = [];
+    for (let skip = 0; skip < usersCount && skip < MAX_USERS; skip += BATCH_SIZE) {
+      const users = await User.find({ 'interactionHistory.0': { $exists: true } })
+        .select('_id interactionHistory')
+        .skip(skip)
+        .limit(BATCH_SIZE)
+        .lean();
+      
+      users.forEach((user, index) => {
+        const globalIndex = usersList.length;
+        this.userIndexMap.set(user._id.toString(), globalIndex);
+        usersList.push(user);
+      });
+      
+      this.performMemoryCleanup();
+    }
+
+    // Page through products to build item index map
+    const productsList = [];
+    for (let skip = 0; skip < productsCount && skip < MAX_PRODUCTS; skip += BATCH_SIZE) {
+      const products = await Product.find()
+        .select('_id')
+        .skip(skip)
+        .limit(BATCH_SIZE)
+        .lean();
+      
+      products.forEach((product, index) => {
+        const globalIndex = productsList.length;
+        this.itemIndexMap.set(product._id.toString(), globalIndex);
+        productsList.push(product);
+      });
+      
+      this.performMemoryCleanup();
+    }
+
+    // Initialize matrix
+    this.userItemMatrix = new Matrix(usersList.length, productsList.length);
+    const interactionWeights = { 'view': 1, 'like': 2, 'cart': 3, 'purchase': 5, 'review': 4 };
+
+    // Build user-item matrix in batches
+    for (let i = 0; i < usersList.length; i += BATCH_SIZE) {
+      const batch = usersList.slice(i, i + BATCH_SIZE);
+      
+      for (const user of batch) {
+        const userIndex = this.userIndexMap.get(user._id.toString());
+        
+        user.interactionHistory.forEach(interaction => {
+          const itemIndex = this.itemIndexMap.get(interaction.productId.toString());
+          if (itemIndex !== undefined) {
+            const weight = interactionWeights[interaction.interactionType] || 1;
+            const rating = interaction.rating || 3;
+            const score = weight * (rating / 5);
+            this.userItemMatrix.set(userIndex, itemIndex, score);
+          }
+        });
+      }
+      
+      if (i % MEMORY_CLEANUP_INTERVAL === 0) {
+        this.performMemoryCleanup();
+      }
+    }
+
+    // Compute similarities using incremental approach
+    await this.computeUserSimilarity();
+    await this.computeItemSimilarity();
+
+    this.isTrained = true;
+    console.log(`🎉 Incremental Hybrid training done in ${Date.now() - startTime}ms`);
   }
 
   updateWeights(cfWeight, cbWeight) {

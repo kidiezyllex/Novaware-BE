@@ -52,7 +52,7 @@ class GNNRecommender {
     try {
       console.log('   🔧 Normalizing adjacency matrix...');
       const normAdj = this.normalizeAdjacency(adj);
-      console.log(`   ✅ Normalized adjacency shape: ${normAdj.shape}`);
+      console.log(`   ✅ Normalized adjacency   shape: ${normAdj.shape}`);
       
       console.log('   🔧 Computing matrix multiplication...');
       const result = tf.matMul(normAdj, features);
@@ -93,6 +93,8 @@ class GNNRecommender {
     this.userEmbeddings.clear();
     this.productEmbeddings.clear();
     this.adjList.clear();
+    // Track which IDs are users (since MongoDB ObjectIds don't start with 'user')
+    const userIds = new Set();
     
     // Limit the number of users and products to prevent memory issues
     console.log('📊 Fetching users with interaction history...');
@@ -120,6 +122,7 @@ class GNNRecommender {
       
       for (const user of batch) {
         const userId = user._id.toString();
+        userIds.add(userId); // Mark as user ID
         this.adjList.set(userId, []);
         
         for (const int of user.interactionHistory) {
@@ -177,7 +180,7 @@ class GNNRecommender {
       
       for (const id of batch) {
         const emb = tf.randomNormal([this.embeddingSize]);
-        if (id.startsWith('user')) {
+        if (userIds.has(id)) {
           this.userEmbeddings.set(id, emb);
           userEmbeddingCount++;
         } else {
@@ -253,7 +256,7 @@ class GNNRecommender {
       console.log('📊 Creating feature matrix for sampled nodes...');
       const features = tf.stack(
         sampledNodeIds.map(id =>
-          id.startsWith('user')
+          this.userEmbeddings.has(id)
             ? this.userEmbeddings.get(id)
             : this.productEmbeddings.get(id)
         )
@@ -298,8 +301,8 @@ class GNNRecommender {
         
         // Predict interaction
         console.log('🎯 Preparing interaction prediction...');
-        const userIdx = sampledNodeIds.filter(id => id.startsWith('user')).map(id => sampledNodeIds.indexOf(id));
-        const prodIdx = sampledNodeIds.filter(id => !id.startsWith('user')).map(id => sampledNodeIds.indexOf(id));
+        const userIdx = sampledNodeIds.filter(id => this.userEmbeddings.has(id)).map(id => sampledNodeIds.indexOf(id));
+        const prodIdx = sampledNodeIds.filter(id => !this.userEmbeddings.has(id)).map(id => sampledNodeIds.indexOf(id));
         
         console.log(`   Found ${userIdx.length} users and ${prodIdx.length} products for prediction`);
         
@@ -338,7 +341,7 @@ class GNNRecommender {
       console.log('📊 Creating feature matrix for all nodes...');
       const features = tf.stack(
         nodeIds.map(id =>
-          id.startsWith('user')
+          this.userEmbeddings.has(id)
             ? this.userEmbeddings.get(id)
             : this.productEmbeddings.get(id)
         )
@@ -377,8 +380,8 @@ class GNNRecommender {
         
         // Predict interaction
         console.log('🎯 Preparing interaction prediction...');
-        const userIdx = nodeIds.filter(id => id.startsWith('user')).map(id => nodeIds.indexOf(id));
-        const prodIdx = nodeIds.filter(id => !id.startsWith('user')).map(id => nodeIds.indexOf(id));
+        const userIdx = nodeIds.filter(id => this.userEmbeddings.has(id)).map(id => nodeIds.indexOf(id));
+        const prodIdx = nodeIds.filter(id => !this.userEmbeddings.has(id)).map(id => nodeIds.indexOf(id));
         
         console.log(`   Found ${userIdx.length} users and ${prodIdx.length} products for prediction`);
         
@@ -439,6 +442,8 @@ class GNNRecommender {
     this.userEmbeddings.clear();
     this.productEmbeddings.clear();
     this.adjList.clear();
+    // Track which IDs are users (since MongoDB ObjectIds don't start with 'user')
+    const userIds = new Set();
 
     // Count documents
     const usersCount = await User.countDocuments({ 'interactionHistory.0': { $exists: true } });
@@ -454,6 +459,7 @@ class GNNRecommender {
         .lean();
       for (const user of users) {
         const userId = user._id.toString();
+        userIds.add(userId); // Mark as user ID
         if (!this.adjList.has(userId)) this.adjList.set(userId, []);
         for (const int of user.interactionHistory) {
           const prodId = int.productId.toString();
@@ -486,13 +492,15 @@ class GNNRecommender {
       this.performMemoryCleanup();
     }
 
+    console.log(`✅ Built adjacency list with ${this.adjList.size} nodes (${userIds.size} users, ${this.adjList.size - userIds.size} products)`);
+
     // Initialize embeddings for nodes seen
     const nodeIds = Array.from(this.adjList.keys());
     for (let i = 0; i < nodeIds.length; i += BATCH_SIZE_GNN) {
       const batch = nodeIds.slice(i, i + BATCH_SIZE_GNN);
       for (const id of batch) {
         const emb = tf.randomNormal([this.embeddingSize]);
-        if (id.startsWith('user')) {
+        if (userIds.has(id)) {
           this.userEmbeddings.set(id, emb);
         } else {
           this.productEmbeddings.set(id, emb);
@@ -507,10 +515,10 @@ class GNNRecommender {
     const usedNodeIds = n > maxNodes ? nodeIds.sort(() => 0.5 - Math.random()).slice(0, maxNodes) : nodeIds;
 
     const features = tf.stack(
-      usedNodeIds.map(id => id.startsWith('user') ? this.userEmbeddings.get(id) : this.productEmbeddings.get(id))
+      usedNodeIds.map(id => userIds.has(id) ? this.userEmbeddings.get(id) : this.productEmbeddings.get(id))
     );
-    const userIdx = usedNodeIds.filter(id => id.startsWith('user')).map(id => usedNodeIds.indexOf(id));
-    const prodIdx = usedNodeIds.filter(id => !id.startsWith('user')).map(id => usedNodeIds.indexOf(id));
+    const userIdx = usedNodeIds.filter(id => userIds.has(id)).map(id => usedNodeIds.indexOf(id));
+    const prodIdx = usedNodeIds.filter(id => !userIds.has(id)).map(id => usedNodeIds.indexOf(id));
     if (userIdx.length > 0 && prodIdx.length > 0) {
       const userEmb = tf.gather(features, userIdx);
       const prodEmb = tf.gather(features, prodIdx);
@@ -594,7 +602,7 @@ class GNNRecommender {
       
       // Simple random walk update for all embeddings
       for (const nodeId of nodeIds) {
-        if (nodeId.startsWith('user')) {
+        if (this.userEmbeddings.has(nodeId)) {
           const currentEmb = this.userEmbeddings.get(nodeId);
           if (currentEmb) {
             const noise = tf.randomNormal([this.embeddingSize], 0, learningRate);
@@ -840,6 +848,131 @@ class GNNRecommender {
     }
   }
 
+  // Helper method to get age-appropriate categories and styles
+  getAgeAppropriateCategories(age) {
+    if (!age) return null;
+    
+    if (age >= 13 && age <= 18) {
+      return { style: 'casual', categories: ['Tops', 'Bottoms', 'Shoes', 'Accessories'] };
+    } else if (age >= 19 && age <= 25) {
+      return { style: 'modern', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else if (age >= 26 && age <= 35) {
+      return { style: 'professional', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else if (age >= 36 && age <= 50) {
+      return { style: 'classic', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    } else {
+      return { style: 'traditional', categories: ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'] };
+    }
+  }
+
+  // Helper method to analyze user interaction history
+  async analyzeInteractionHistory(user) {
+    const history = user.interactionHistory || [];
+    if (history.length === 0) return { categories: [], brands: [], styles: [] };
+
+    const historyIds = history.map(i => i.productId);
+    const products = await Product.find({ _id: { $in: historyIds } })
+      .select('category brand outfitTags')
+      .lean();
+
+    const categories = new Map();
+    const brands = new Map();
+    const styles = new Map();
+
+    products.forEach((product, index) => {
+      const interaction = history[index];
+      const weight = interaction.interactionType === 'purchase' ? 3 : 
+                     interaction.interactionType === 'cart' ? 2 : 
+                     interaction.interactionType === 'like' ? 1.5 : 1;
+
+      categories.set(product.category, (categories.get(product.category) || 0) + weight);
+      brands.set(product.brand, (brands.get(product.brand) || 0) + weight);
+      if (product.outfitTags) {
+        product.outfitTags.forEach(tag => {
+          styles.set(tag, (styles.get(tag) || 0) + weight);
+        });
+      }
+    });
+
+    return {
+      categories: Array.from(categories.entries()).sort((a, b) => b[1] - a[1]).map(([cat]) => cat),
+      brands: Array.from(brands.entries()).sort((a, b) => b[1] - a[1]).map(([brand]) => brand),
+      styles: Array.from(styles.entries()).sort((a, b) => b[1] - a[1]).map(([style]) => style)
+    };
+  }
+
+  // Helper method to calculate personalized score with age, gender, history
+  calculatePersonalizedScore(product, user, historyAnalysis, baseScore) {
+    let personalizedScore = baseScore;
+    const factors = [];
+
+    // Gender filtering
+    if (user.gender) {
+      const genderAllow = user.gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+        : user.gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+        : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+      
+      if (genderAllow.has(product.category)) {
+        personalizedScore *= 1.3;
+        factors.push(`phù hợp với giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}`);
+      } else {
+        personalizedScore *= 0.3; // Heavily penalize if gender doesn't match
+      }
+    }
+
+    // Age appropriateness
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo && ageInfo.categories.includes(product.category)) {
+        personalizedScore *= 1.2;
+        factors.push(`phù hợp với độ tuổi ${user.age}`);
+      }
+      
+      // Style matching
+      if (ageInfo && product.outfitTags?.includes(ageInfo.style)) {
+        personalizedScore *= 1.15;
+        factors.push(`phù hợp với phong cách ${ageInfo.style}`);
+      }
+    }
+
+    // Interaction history matching
+    if (historyAnalysis.categories.includes(product.category)) {
+      personalizedScore *= 1.4;
+      factors.push(`bạn đã tương tác với danh mục ${product.category}`);
+    }
+    
+    if (historyAnalysis.brands.includes(product.brand)) {
+      personalizedScore *= 1.3;
+      factors.push(`bạn đã mua thương hiệu ${product.brand}`);
+    }
+    
+    if (historyAnalysis.styles.some(style => product.outfitTags?.includes(style))) {
+      personalizedScore *= 1.25;
+      factors.push(`phù hợp với phong cách bạn thích`);
+    }
+
+    // User preferences
+    if (user.preferences) {
+      if (user.preferences.style && product.outfitTags?.includes(user.preferences.style)) {
+        personalizedScore *= 1.2;
+        factors.push(`phù hợp với sở thích phong cách ${user.preferences.style}`);
+      }
+      
+      if (user.preferences.colorPreferences && product.colors) {
+        const productColors = product.colors.map(c => c.name.toLowerCase());
+        const matchingColors = user.preferences.colorPreferences.filter(cp => 
+          productColors.includes(cp.toLowerCase())
+        );
+        if (matchingColors.length > 0) {
+          personalizedScore *= 1.15;
+          factors.push(`có màu sắc bạn yêu thích (${matchingColors.join(', ')})`);
+        }
+      }
+    }
+
+    return { score: personalizedScore, factors };
+  }
+
   async recommend(userId, k = 10) {
     console.log(`🎯 Starting recommendation for user: ${userId}`);
     const recommendStartTime = Date.now();
@@ -858,12 +991,19 @@ class GNNRecommender {
     if (this.productEmbeddings.size === 0) {
       console.warn('⚠️  No product embeddings available. Falling back to cold-start');
       const cold = await this.recommendColdStart(userId, k);
-      return { products: cold, outfits: [], model: 'ColdStart (TopRated)' };
+      return { products: cold, outfits: [], model: 'ColdStart (TopRated)', explanation: 'Không có dữ liệu embedding, sử dụng sản phẩm phổ biến nhất' };
     }
 
     console.log('👤 Fetching user data...');
-    const user = await this.ensureUserWithHistory(userId);
+    const user = await User.findById(userId).select('_id interactionHistory gender age preferences');
+    if (!user || !user.interactionHistory || user.interactionHistory.length === 0) {
+      throw new Error('User not found or has no interaction history');
+    }
     console.log(`✅ User found: ${user.email || user._id}`);
+
+    // Analyze interaction history
+    console.log('📊 Analyzing user interaction history...');
+    const historyAnalysis = await this.analyzeInteractionHistory(user);
 
     const userIdStr = userId.toString();
     let userEmb = this.userEmbeddings.get(userIdStr);
@@ -878,55 +1018,142 @@ class GNNRecommender {
     }
 
     console.log(`🔢 Computing scores for ${this.productEmbeddings.size} products...`);
-    const scores = {};
-    let scoreCount = 0;
-
-    for (const [prodId, emb] of this.productEmbeddings) {
-      const score = tf.matMul(userEmb.reshape([1, -1]), emb.reshape([-1, 1])).dataSync()[0];
-      scores[prodId] = score;
-      scoreCount++;
+    
+    // Get all product IDs and embeddings
+    const allProductIds = Array.from(this.productEmbeddings.keys());
+    const productEmbeddingsArray = allProductIds.map(id => this.productEmbeddings.get(id));
+    
+    // Batch compute all base scores at once (much faster than individual matrix multiplications)
+    console.log('   📊 Computing base scores in batch...');
+    const userEmbMatrix = userEmb.reshape([1, -1]);
+    const productEmbMatrix = tf.stack(productEmbeddingsArray); // Shape: [numProducts, embeddingSize]
+    const baseScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync(); // Shape: [1, numProducts]
+    
+    // Get top candidates based on base scores (before expensive personalization)
+    // Use a larger candidate pool (k * 3) to ensure we have enough after filtering
+    const candidatePoolSize = Math.min(k * 3, allProductIds.length);
+    const scoreIndexPairs = Array.from({length: allProductIds.length}, (_, i) => ({
+      score: baseScores[i],
+      index: i
+    }));
+    
+    // Partial sort to get top candidates (much faster than full sort)
+    scoreIndexPairs.sort((a, b) => b.score - a.score);
+    const topCandidateIndices = scoreIndexPairs.slice(0, candidatePoolSize).map(pair => pair.index);
+    const topCandidateIds = topCandidateIndices.map(i => allProductIds[i]);
+    
+    console.log(`   ✅ Selected ${topCandidateIds.length} top candidates for personalization`);
+    
+    // Fetch only candidate products from database
+    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } }).lean();
+    const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
+    
+    // Compute personalized scores only for candidates
+    const scoredProducts = [];
+    for (const idx of topCandidateIndices) {
+      const prodId = allProductIds[idx];
+      const product = productMap.get(prodId);
+      if (!product) continue;
       
-      if (scoreCount % 500 === 0) {
-        console.log(`   Computed scores for ${scoreCount}/${this.productEmbeddings.size} products...`);
-      }
+      const baseScore = baseScores[idx];
+      const { score, factors } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
+      
+      scoredProducts.push({
+        product,
+        score,
+        factors
+      });
     }
-    console.log(`✅ Computed scores for ${scoreCount} products`);
+    
+    console.log(`✅ Computed personalized scores for ${scoredProducts.length} candidates`);
 
     console.log(`📊 Sorting and selecting top ${k} products...`);
-    const topIds = Object.keys(scores)
-      .sort((a, b) => scores[b] - scores[a])
-      .slice(0, k);
-    console.log(`✅ Selected ${topIds.length} top products`);
+    const topProducts = scoredProducts
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k)
+      .map(item => item.product);
 
-    console.log('🛍️  Fetching product details from database...');
-    const products = topIds.length > 0 ? await Product.find({ _id: { $in: topIds } }) : [];
-    console.log(`✅ Retrieved ${products.length} product details`);
+    console.log(`✅ Selected ${topProducts.length} top products`);
 
     console.log('👗 Generating outfit recommendations...');
-    const outfits = await this.generateOutfits(products, user);
+    const outfits = await this.generateOutfits(topProducts, user);
     console.log(`✅ Generated ${outfits.length} outfit recommendations`);
+
+    // Generate explanation
+    const explanation = this.generateExplanation(user, historyAnalysis, topProducts);
 
     const recommendEndTime = Date.now() - recommendStartTime;
     console.log(`🎉 Recommendation completed successfully!`);
     console.log(`   ⏱️  Recommendation time: ${recommendEndTime}ms`);
-    console.log(`   🛍️  Products recommended: ${products.length}`);
+    console.log(`   🛍️  Products recommended: ${topProducts.length}`);
     console.log(`   👗 Outfits generated: ${outfits.length}`);
     console.log(`   🎯 Model used: GNN (GCN)`);
 
-    return { products, outfits, model: 'GNN (GCN)' };
+    return { products: topProducts, outfits, model: 'GNN (GCN)', explanation };
+  }
+
+  // Generate explanation for recommendations
+  generateExplanation(user, historyAnalysis, products) {
+    const reasons = [];
+    
+    if (user.gender) {
+      reasons.push(`Dựa trên giới tính ${user.gender === 'male' ? 'nam' : 'nữ'} của bạn`);
+    }
+    
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo) {
+        reasons.push(`Phù hợp với độ tuổi ${user.age} và phong cách ${ageInfo.style}`);
+      }
+    }
+    
+    if (historyAnalysis.categories.length > 0) {
+      const topCategories = historyAnalysis.categories.slice(0, 3).join(', ');
+      reasons.push(`Dựa trên lịch sử tương tác với các danh mục: ${topCategories}`);
+    }
+    
+    if (historyAnalysis.brands.length > 0) {
+      const topBrands = historyAnalysis.brands.slice(0, 2).join(', ');
+      reasons.push(`Bạn đã quan tâm đến thương hiệu: ${topBrands}`);
+    }
+    
+    if (user.preferences?.style) {
+      reasons.push(`Phù hợp với phong cách ${user.preferences.style} bạn yêu thích`);
+    }
+    
+    if (products.length > 0) {
+      const categories = [...new Set(products.map(p => p.category))];
+      reasons.push(`Gợi ý ${products.length} sản phẩm từ các danh mục: ${categories.join(', ')}`);
+    }
+    
+    return reasons.length > 0 ? reasons.join('. ') : 'Dựa trên mô hình GNN phân tích đồ thị tương tác người dùng và sản phẩm';
   }
 
   async recommendPersonalize(userId, k = 10) {
     // 尝试个性化；若无历史则回退冷启动
     try {
       const result = await this.recommend(userId, k);
-      return { products: result.products, model: result.model, timestamp: new Date().toISOString() };
+      return { 
+        products: result.products, 
+        model: result.model, 
+        timestamp: new Date().toISOString(),
+        explanation: result.explanation || ''
+      };
     } catch (error) {
       const msg = (error && error.message) ? error.message : '';
       const isColdStartCase = msg.includes('no interaction history') || msg.includes('not found in training data') || msg.includes('User not found');
       if (!isColdStartCase) throw error;
       const cold = await this.recommendColdStart(userId, k);
-      return { products: cold, model: 'ColdStart (TopRated)', timestamp: new Date().toISOString() };
+      const user = await User.findById(userId).select('gender age');
+      const coldExplanation = user 
+        ? `Dựa trên ${user.gender ? `giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}` : ''} ${user.age ? `độ tuổi ${user.age}` : ''}. Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác`
+        : 'Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác';
+      return { 
+        products: cold, 
+        model: 'ColdStart (TopRated)', 
+        timestamp: new Date().toISOString(),
+        explanation: coldExplanation
+      };
     }
   }
 
@@ -969,18 +1196,52 @@ class GNNRecommender {
       this.userEmbeddings.set(userIdStr, userEmb);
     }
 
+    // Analyze interaction history
+    const historyAnalysis = await this.analyzeInteractionHistory(user);
+
     // Collect user history categories
     const historyIds = (user.interactionHistory || []).map(i => i.productId);
     const historyProducts = historyIds.length > 0 ? await Product.find({ _id: { $in: historyIds } }).select('_id category').lean() : [];
     const preferredCategories = new Set(historyProducts.map(p => p.category));
 
-    // Compute scores across products
-    const scores = {};
-    for (const [pid, emb] of this.productEmbeddings) {
-      scores[pid] = tf.matMul(userEmb.reshape([1, -1]), emb.reshape([-1, 1])).dataSync()[0];
+    // Compute scores across products with personalization (optimized batch computation)
+    const allProductIds = Array.from(this.productEmbeddings.keys());
+    const productEmbeddingsArray = allProductIds.map(id => this.productEmbeddings.get(id));
+    
+    // Batch compute all base scores at once
+    const userEmbMatrix = userEmb.reshape([1, -1]);
+    const productEmbMatrix = tf.stack(productEmbeddingsArray);
+    const baseScores = tf.matMul(userEmbMatrix, productEmbMatrix, false, true).dataSync();
+    
+    // Get top candidates (k * 3 for outfit recommendations to have more options)
+    const candidatePoolSize = Math.min(k * 3, allProductIds.length);
+    const scoreIndexPairs = Array.from({length: allProductIds.length}, (_, i) => ({
+      score: baseScores[i],
+      index: i
+    }));
+    scoreIndexPairs.sort((a, b) => b.score - a.score);
+    const topCandidateIndices = scoreIndexPairs.slice(0, candidatePoolSize).map(pair => pair.index);
+    const topCandidateIds = topCandidateIndices.map(i => allProductIds[i]);
+    
+    // Fetch only candidate products
+    const candidateProducts = await Product.find({ _id: { $in: topCandidateIds } }).lean();
+    const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
+    
+    // Compute personalized scores only for candidates
+    const scoredProducts = [];
+    for (const idx of topCandidateIndices) {
+      const prodId = allProductIds[idx];
+      const product = productMap.get(prodId);
+      if (!product) continue;
+      
+      const baseScore = baseScores[idx];
+      const { score } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
+      scoredProducts.push({ product, score });
     }
+    
     // Rank products
-    let rankedIds = Object.keys(scores).sort((a, b) => scores[b] - scores[a]);
+    scoredProducts.sort((a, b) => b.score - a.score);
+    let rankedProducts = scoredProducts.map(item => item.product);
 
     // Gender filter
     const gender = user.gender;
@@ -988,9 +1249,8 @@ class GNNRecommender {
                       : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
                       : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
 
-    // Pull product docs in chunks and filter
-    const candidates = await Product.find({ _id: { $in: rankedIds.slice(0, Math.max(k * 5, 50)) } }).lean();
-    let filtered = candidates.filter(p => genderAllow.has(p.category));
+    // Filter by gender and prioritize preferred categories
+    let filtered = rankedProducts.filter(p => genderAllow.has(p.category));
     if (preferredCategories.size > 0) {
       filtered = filtered.sort((a, b) => (preferredCategories.has(b.category) ? 1 : 0) - (preferredCategories.has(a.category) ? 1 : 0));
     }
@@ -1001,9 +1261,44 @@ class GNNRecommender {
       filtered = [seedProduct, ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), ...filtered.filter(p => p.category !== seedProduct.category)];
     }
 
-    const topProducts = filtered.slice(0, Math.max(k, 20));
+    const topProducts = filtered.slice(0, Math.max(k * 2, 20));
     const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
-    return { outfits, model: 'GNN (GCN)', timestamp: new Date().toISOString() };
+    
+    // Generate explanation
+    const explanation = this.generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis);
+    
+    return { outfits, model: 'GNN (GCN)', timestamp: new Date().toISOString(), explanation };
+  }
+
+  // Generate explanation for outfit recommendations
+  generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis) {
+    const reasons = [];
+    
+    if (seedProduct) {
+      reasons.push(`Dựa trên sản phẩm bạn chọn: ${seedProduct.name} (${seedProduct.category})`);
+    }
+    
+    if (user.gender) {
+      const genderText = user.gender === 'male' ? 'nam' : user.gender === 'female' ? 'nữ' : 'unisex';
+      reasons.push(`Phối đồ phù hợp cho giới tính ${genderText}`);
+    }
+    
+    if (user.age) {
+      const ageInfo = this.getAgeAppropriateCategories(user.age);
+      if (ageInfo) {
+        reasons.push(`Phong cách ${ageInfo.style} phù hợp với độ tuổi ${user.age}`);
+      }
+    }
+    
+    if (historyAnalysis.styles.length > 0) {
+      reasons.push(`Kết hợp phong cách bạn thường chọn: ${historyAnalysis.styles.slice(0, 2).join(', ')}`);
+    }
+    
+    if (outfits.length > 0) {
+      reasons.push(`Tạo ${outfits.length} bộ phối đồ hoàn chỉnh với độ tương thích cao`);
+    }
+    
+    return reasons.length > 0 ? reasons.join('. ') : 'Phối đồ dựa trên sản phẩm bạn chọn và mô hình GNN phân tích tương thích';
   }
 
   calculateOutfitCompatibility(products) {

@@ -221,8 +221,22 @@ const createProductReview = asyncHandler(async (req, res) => {
 
 const getTopProducts = asyncHandler(async (req, res) => {
   const perPage = Math.min(parseInt(req.query.perPage) || 15, 15);
-  const products = await Product.aggregate([
+  const page = parseInt(req.query.pageNumber) || 1;
+
+  const basePipeline = [
+    {
+      $addFields: {
+        priceSale: {
+          $subtract: ["$price", { $multiply: ["$price", "$sale", 0.01] }],
+        },
+      },
+    },
+  ];
+
+  const dataPipeline = [
+    ...basePipeline,
     { $sort: { rating: -1, numReviews: -1 } },
+    { $skip: perPage * (page - 1) },
     { $limit: perPage },
     {
       $project: {
@@ -250,11 +264,26 @@ const getTopProducts = asyncHandler(async (req, res) => {
         },
       },
     },
-  ])
-    .allowDiskUse(true)
-    .option({ maxTimeMS: 30000 });
+  ];
 
-  sendSuccess(res, 200, "Top products retrieved successfully", { page: 1, pages: 1, products, count: products.length });
+  const countPipeline = [
+    ...basePipeline,
+    { $count: "count" },
+  ];
+
+  const [products, countQuery] = await Promise.all([
+    Product.aggregate(dataPipeline).allowDiskUse(true).option({ maxTimeMS: 30000 }),
+    Product.aggregate(countPipeline).allowDiskUse(true).option({ maxTimeMS: 30000 }),
+  ]);
+
+  const totalCount = countQuery.length > 0 ? countQuery[0].count : 0;
+
+  sendSuccess(res, 200, "Top products retrieved successfully", {
+    products,
+    page,
+    pages: Math.ceil(totalCount / perPage),
+    count: totalCount,
+  });
 });
 
 const getLatestProducts = asyncHandler(async (req, res) => {

@@ -25,6 +25,8 @@
     "debug:review-update": "node --max-old-space-size=4096 scripts/debugReviewUpdate.js",
     "check:users-for-testing": "node --max-old-space-size=4096 scripts/checkUsersForTesting.js",
     "create:interaction-history": "node --max-old-space-size=4096 scripts/createInteractionHistory.js",
+    "count:zero-price-products": "node --max-old-space-size=4096 scripts/countZeroPriceProducts.js",
+    "generate:variants": "node --max-old-space-size=4096 scripts/generateVariants.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

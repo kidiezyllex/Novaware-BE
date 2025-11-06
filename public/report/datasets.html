@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Datasets - Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111827; }
+    header { padding: 16px; background: #111827; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+    main { padding: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .btn { border: 1px solid #111827; background: #111827; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; font-size: 14px; }
+    a { color: #fff; text-decoration: none; margin-right: 12px; }
+    nav a { color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>Datasets</div>
+    <nav>
+      <a href="/report">Home</a>
+      <a href="/report/evaluation.html">Evaluation</a>
+      <a href="/report/train.html">Train</a>
+      <a href="/report/recommend.html">Recommend</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h3>Amazon_Fashion.jsonl Samples</h3>
+      <button class="btn" onclick="loadSample('Amazon_Fashion.jsonl', 10)">Load Samples</button>
+      <div style="overflow:auto;margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th>rating</th><th>title</th><th>text</th><th>user_id</th><th>timestamp</th><th>verified_purchase</th>
+            </tr>
+          </thead>
+          <tbody id="reviews"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>meta_Amazon_Fashion.jsonl Samples</h3>
+      <button class="btn" onclick="loadSample('meta_Amazon_Fashion.jsonl', 10)">Load Samples</button>
+      <div style="overflow:auto;margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th>title</th><th>average_rating</th><th>rating_number</th><th>description</th><th>images</th><th>store</th><th>categories</th><th>details</th>
+            </tr>
+          </thead>
+          <tbody id="meta"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Rating Distribution</h3>
+      <button class="btn" onclick="loadStats()">Load Stats</button>
+      <canvas id="chart" height="220" style="margin-top:8px"></canvas>
+      <pre id="stats" style="background:#f9fafb;padding:8px;border-radius:8px"></pre>
+    </div>
+  </main>
+
+  <script>
+    async function loadSample(file, n) {
+      const r = await fetch(`/api/report/dataset/sample?file=${encodeURIComponent(file)}&n=${n}`);
+      const j = await r.json();
+      if (!file.includes('meta')) {
+        const tbody = document.getElementById('reviews');
+        tbody.innerHTML = '';
+        (j.data.rows||[]).forEach(row => {
+          const tr = document.createElement('tr');
+          const cols = [row.rating, row.title, row.text, row.user_id, row.timestamp, row.verified_purchase];
+          cols.forEach(c => { const td=document.createElement('td'); td.textContent=(c==null)?'':(typeof c==='object'?JSON.stringify(c):String(c)); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+      } else {
+        const tbody = document.getElementById('meta');
+        tbody.innerHTML = '';
+        (j.data.rows||[]).forEach(row => {
+          const tr = document.createElement('tr');
+          const cols = [row.title, row.average_rating, row.rating_number, row.description, Array.isArray(row.images)?row.images.length:undefined, row.store, Array.isArray(row.categories)?row.categories.join(' / '):undefined, typeof row.details==='object'?Object.keys(row.details).length:undefined];
+          cols.forEach(c => { const td=document.createElement('td'); td.textContent=(c==null)?'':(typeof c==='object'?JSON.stringify(c):String(c)); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+      }
+    }
+    async function loadStats() {
+      const r = await fetch('/api/report/dataset/stats');
+      const j = await r.json();
+      document.getElementById('stats').textContent = JSON.stringify(j.data, null, 2);
+      const hist = j.data.ratingHistogram || {};
+      const ctx = document.getElementById('chart');
+      new Chart(ctx, { type:'bar', data:{ labels:Object.keys(hist), datasets:[{ label:'Count', data:Object.values(hist), backgroundColor:'#111827' }]}, options:{ scales:{ y:{ beginAtZero:true } } } });
+    }
+  </script>
+</body>
+</html>
+
+

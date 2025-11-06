@@ -114,6 +114,9 @@ const productSchema = mongoose.Schema(
     outfitTags: [String],
     compatibleProducts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
     featureVector: { type: [Number], default: [] },
+    // Amazon identifiers for data mapping
+    amazonAsin: { type: String, index: true },
+    amazonParentAsin: { type: String, index: true },
   },
   {
     timestamps: true,

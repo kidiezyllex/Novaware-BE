@@ -136,6 +136,8 @@ const userSchema = mongoose.Schema(
       interactionType: { type: String, enum: ['view', 'like', 'purchase'] },
       timestamp: { type: Date, default: Date.now }
     }],
+    // Amazon identifier for data mapping
+    amazonUserId: { type: String, index: true },
   },
   {
     timestamps: true,

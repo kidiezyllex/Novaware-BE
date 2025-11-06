@@ -160,11 +160,17 @@ router.get('/hybrid/personalize/:userId', asyncHandler(async (req, res) => {
  *           type: integer
  *           default: 9
  *         description: Số lượng outfit recommendations mỗi trang (mặc định 9)
+ *       - in: query
+ *         name: gender
+ *         schema:
+ *           type: string
+ *           enum: [male, female, other]
+ *         description: User gender (optional, uses user's gender from database if not provided, defaults to 'other')
  *     responses:
  *       200:
  *         description: Outfit recommendations generated successfully
  *       400:
- *         description: User not eligible (missing gender or no interaction history)
+ *         description: User not eligible (no interaction history)
  *       404:
  *         description: User not found
  *       500:
@@ -172,7 +178,7 @@ router.get('/hybrid/personalize/:userId', asyncHandler(async (req, res) => {
  */
 router.get('/gnn/outfit-perfect/:userId', asyncHandler(async (req, res) => {
   const { userId } = req.params;
-  const { k = 9, pageNumber = 1, perPage = 9, productId = null } = req.query;
+  const { k = 9, pageNumber = 1, perPage = 9, productId = null, gender = null } = req.query;
   
   try {
     if (!productId) {
@@ -183,8 +189,8 @@ router.get('/gnn/outfit-perfect/:userId', asyncHandler(async (req, res) => {
     const limit = parseInt(perPage);
     const skip = limit * (page - 1);
     
-    // Generate outfits via GNN with optional seed productId
-    const payload = await gnnRecommender.recommendOutfits(userId, { productId, k: parseInt(k) });
+    // Generate outfits via GNN with optional seed productId and gender
+    const payload = await gnnRecommender.recommendOutfits(userId, { productId, k: parseInt(k), gender });
     
     // Filter to only return outfits with pagination
     const paginatedOutfits = payload.outfits?.slice(skip, skip + limit) || [];

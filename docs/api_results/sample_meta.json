@@ -1,0 +1,110 @@
+{
+  "exists": true,
+  "rows": [
+    {
+      "main_category": "AMAZON FASHION",
+      "title": "YUEDGE 5 Pairs Men's Moisture Control Cushioned Dry Fit Casual Athletic Crew Socks for Men (Blue, Size 9-12)",
+      "average_rating": 4.6,
+      "rating_number": 16,
+      "features": [],
+      "description": [],
+      "price": null,
+      "images": [
+        {
+          "thumb": "https://m.media-amazon.com/images/I/41+cCfaVOFS._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/41+cCfaVOFS._AC_.jpg",
+          "variant": "MAIN",
+          "hi_res": "https://m.media-amazon.com/images/I/81XlFXImFrS._AC_UL1500_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/41jBdP7etRS._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/41jBdP7etRS._AC_.jpg",
+          "variant": "PT01",
+          "hi_res": "https://m.media-amazon.com/images/I/61+yVkHHQ3S._AC_UL1200_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/41UGJiRe7UL._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/41UGJiRe7UL._AC_.jpg",
+          "variant": "PT02",
+          "hi_res": "https://m.media-amazon.com/images/I/61vbh6sLR1L._AC_UL1200_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/41zb4GR-lWS._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/41zb4GR-lWS._AC_.jpg",
+          "variant": "PT03",
+          "hi_res": "https://m.media-amazon.com/images/I/71tRVQuan7S._AC_UL1500_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/612BT4t-uFL._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/612BT4t-uFL._AC_.jpg",
+          "variant": "PT04",
+          "hi_res": "https://m.media-amazon.com/images/I/81BvTztKWGL._AC_UL1200_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/51ExLGv3QwL._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/51ExLGv3QwL._AC_.jpg",
+          "variant": "PT05",
+          "hi_res": "https://m.media-amazon.com/images/I/71LytMHW9ML._AC_UL1200_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/313iU0xDEkS._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/313iU0xDEkS._AC_.jpg",
+          "variant": "PT06",
+          "hi_res": "https://m.media-amazon.com/images/I/71wJKMbj5cS._AC_UL1500_.jpg"
+        }
+      ],
+      "videos": [],
+      "store": "GiveGift",
+      "categories": [],
+      "details": {
+        "Package Dimensions": "10.31 x 8.5 x 1.73 inches; 14.82 Ounces",
+        "Item model number": "DHES5PM21DH12",
+        "Date First Available": "February 12, 2021"
+      },
+      "parent_asin": "B08BHN9PK5",
+      "bought_together": null
+    },
+    {
+      "main_category": "AMAZON FASHION",
+      "title": "DouBCQ Women's Palazzo Lounge Wide Leg Casual Flowy Pants(Flower Mix Blue, XL)",
+      "average_rating": 4.1,
+      "rating_number": 7,
+      "features": [
+        "Drawstring closure",
+        "Machine Wash"
+      ],
+      "description": [],
+      "price": null,
+      "images": [
+        {
+          "thumb": "https://m.media-amazon.com/images/I/515cR-ta1EL._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/515cR-ta1EL._AC_.jpg",
+          "variant": "MAIN",
+          "hi_res": "https://m.media-amazon.com/images/I/91Z4G2jlFeL._AC_UL1500_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/51Dyk8PiO7L._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/51Dyk8PiO7L._AC_.jpg",
+          "variant": "PT01",
+          "hi_res": "https://m.media-amazon.com/images/I/91nZpeWHn-L._AC_UL1500_.jpg"
+        },
+        {
+          "thumb": "https://m.media-amazon.com/images/I/51MS48eV8XL._AC_SR38,50_.jpg",
+          "large": "https://m.media-amazon.com/images/I/51MS48eV8XL._AC_.jpg",
+          "variant": "PT02",
+          "hi_res": "https://m.media-amazon.com/images/I/91aCjCS6e0L._AC_UL1500_.jpg"
+        }
+      ],
+      "videos": [],
+      "store": "DouBCQ",
+      "categories": [],
+      "details": {
+        "Package Dimensions": "15 x 10.2 x 0.4 inches; 9.59 Ounces",
+        "Item model number": "Drop Crotch",
+        "Date First Available": "February 5, 2021"
+      },
+      "parent_asin": "B08R39MRDW",
+      "bought_together": null
+    }
+  ]
+}

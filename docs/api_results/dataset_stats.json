@@ -1,0 +1,13 @@
+{
+  "totalReviews": 2500939,
+  "uniqueUsers": 2035490,
+  "uniqueProducts": 874297,
+  "ratingHistogram": {
+    "1": 303411,
+    "2": 173462,
+    "3": 245471,
+    "4": 352327,
+    "5": 1426268
+  },
+  "exists": true
+}

@@ -22,6 +22,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import contentSectionRoutes from "./routes/contentSectionRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import recommendRoutes from "./routes/recommendRoutes.js";
+import reportRoutes from "./routes/reportRoutes.js";
 import gnnRecommender from "./services/gnnRecommender.js";
 import stripe from "stripe";
 import { setupSwagger } from "./config/swagger.js";
@@ -143,6 +144,7 @@ const startServer = async () => {
     app.use("/api/chats", chatRoutes);
     app.use("/api/content-sections", contentSectionRoutes);
     app.use("/api/recommend", recommendRoutes);
+    app.use("/api/report", reportRoutes);
 
     // Setup Swagger documentation
     setupSwagger(app);
@@ -204,6 +206,8 @@ const startServer = async () => {
     app.use("/uploads", express.static(path.join(__dirname, "/uploads")));
 
     app.use("/docs", express.static(path.join(__dirname, "/docs")));
+    app.use(express.static(path.join(__dirname, "/public")));
+    app.use("/report", express.static(path.join(__dirname, "/public/report")));
 
     app.use(notFound);
 
@@ -231,12 +235,40 @@ const startServer = async () => {
             if (loaded) {
               console.log('✅ GNN model preloaded at startup');
             } else {
-              console.warn('⚠️  GNN model not found. Model will be trained on first recommendation request.');
-              console.log('💡 Tip: Train manually via API: POST /api/recommend/train/gnn');
+              const autoTrain = process.env.AUTO_TRAIN_GNN !== 'false';
+              if (autoTrain) {
+                console.log('🚀 GNN model not found. Starting automatic training with all products...');
+                try {
+                  const trainStart = Date.now();
+                  await gnnRecommender.train();
+                  const trainTime = ((Date.now() - trainStart) / 1000).toFixed(2);
+                  console.log(`✅ GNN model training completed automatically in ${trainTime}s`);
+                } catch (trainError) {
+                  console.error('❌ Failed to auto-train GNN model:', trainError.message);
+                  console.warn('⚠️  Model will be trained on first recommendation request.');
+                }
+              } else {
+                console.warn('⚠️  GNN model not found. Model will be trained on first recommendation request.');
+                console.log('💡 Tip: Train manually via API: POST /api/recommend/train/gnn');
+              }
             }
           } catch (e) {
             console.error('Failed to load GNN model:', e);
-            console.warn('⚠️  Model will be trained on first recommendation request.');
+            const autoTrain = process.env.AUTO_TRAIN_GNN !== 'false';
+            if (autoTrain) {
+              console.log('🚀 Starting automatic training with all products...');
+              try {
+                const trainStart = Date.now();
+                await gnnRecommender.train();
+                const trainTime = ((Date.now() - trainStart) / 1000).toFixed(2);
+                console.log(`✅ GNN model training completed automatically in ${trainTime}s`);
+              } catch (trainError) {
+                console.error('❌ Failed to auto-train GNN model:', trainError.message);
+                console.warn('⚠️  Model will be trained on first recommendation request.');
+              }
+            } else {
+              console.warn('⚠️  Model will be trained on first recommendation request.');
+            }
           }
         })();
       }

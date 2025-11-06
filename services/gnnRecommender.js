@@ -3,10 +3,10 @@ import fs from 'fs/promises';
 import path from 'path';
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
-
-const MAX_NODES = 1000;
-const MAX_USERS_GNN = 500;
-const MAX_PRODUCTS_GNN = 1000;
+// abc
+const MAX_NODES = process.env.MAX_NODES_GNN ? parseInt(process.env.MAX_NODES_GNN) : Number.MAX_SAFE_INTEGER;
+const MAX_USERS_GNN = process.env.MAX_USERS_GNN ? parseInt(process.env.MAX_USERS_GNN) : Number.MAX_SAFE_INTEGER;
+const MAX_PRODUCTS_GNN = process.env.MAX_PRODUCTS_GNN ? parseInt(process.env.MAX_PRODUCTS_GNN) : Number.MAX_SAFE_INTEGER;
 const BATCH_SIZE_GNN = 50;
 const MEMORY_CLEANUP_INTERVAL_GNN = 25;
 
@@ -110,20 +110,32 @@ class GNNRecommender {
     this.adjList.clear();
     const userIds = new Set();
     console.log('📊 Fetching users with interaction history...');
-    const users = await User.find({ 'interactionHistory.0': { $exists: true } })
+    const userQuery = User.find({ 'interactionHistory.0': { $exists: true } })
       .select('_id interactionHistory')
-      .limit(MAX_USERS_GNN)
-      .setOptions({ allowDiskUse: true })
-      .lean();
+      .setOptions({ allowDiskUse: true });
+    
+    if (MAX_USERS_GNN < Number.MAX_SAFE_INTEGER) {
+      userQuery.limit(MAX_USERS_GNN);
+      console.log(`   ⚠️  Limiting to ${MAX_USERS_GNN} users (configured via MAX_USERS_GNN)`);
+    } else {
+      console.log(`   ✅ No user limit - training all users`);
+    }
+    const users = await userQuery.lean();
       
     console.log('📊 Fetching products with compatibility data...');
-    const products = await Product.find()
+    const productQuery = Product.find()
       .select('_id compatibleProducts')
-      .limit(MAX_PRODUCTS_GNN)
-      .setOptions({ allowDiskUse: true })
-      .lean();
+      .setOptions({ allowDiskUse: true });
+    
+    if (MAX_PRODUCTS_GNN < Number.MAX_SAFE_INTEGER) {
+      productQuery.limit(MAX_PRODUCTS_GNN);
+      console.log(`   ⚠️  Limiting to ${MAX_PRODUCTS_GNN} products (configured via MAX_PRODUCTS_GNN)`);
+    } else {
+      console.log(`   ✅ No product limit - training all products`);
+    }
+    const products = await productQuery.lean();
 
-    console.log(`✅ Found ${users.length} users and ${products.length} products (memory-limited)`);
+    console.log(`✅ Found ${users.length} users and ${products.length} products`);
 
     console.log('🔗 Building user-product adjacency list...');
     let userProductEdges = 0;
@@ -225,8 +237,8 @@ class GNNRecommender {
     const n = nodeIds.length;
     const maxNodes = MAX_NODES;
     
-    if (n > maxNodes) {
-      console.log(`⚠️  Graph too large (${n} nodes), sampling ${maxNodes} nodes for training`);
+    if (maxNodes < Number.MAX_SAFE_INTEGER && n > maxNodes) {
+      console.log(`⚠️  Graph too large (${n} nodes), sampling ${maxNodes} nodes for training (configured via MAX_NODES_GNN)`);
       
       console.log('🎲 Randomly sampling nodes...');
       const shuffled = nodeIds.sort(() => 0.5 - Math.random());
@@ -329,7 +341,11 @@ class GNNRecommender {
         this.updateEmbeddingsSimple(sampledNodeIds);
       }
     } else {
-      console.log(`📊 Using full graph (${n} nodes) for training`);
+      if (maxNodes < Number.MAX_SAFE_INTEGER) {
+        console.log(`📊 Using full graph (${n} nodes) for training (within limit of ${maxNodes})`);
+      } else {
+        console.log(`📊 Using full graph (${n} nodes) for training - no limit configured`);
+      }
       
       console.log('📊 Creating feature matrix for all nodes...');
       const features = tf.stack(
@@ -450,7 +466,8 @@ class GNNRecommender {
     const productsCount = await Product.countDocuments({});
     console.log(`📊 Counts → users(with history): ${usersCount}, products: ${productsCount}`);
 
-    for (let skip = 0; skip < usersCount && skip < MAX_USERS_GNN; skip += BATCH_SIZE_GNN) {
+    const maxUsersToProcess = MAX_USERS_GNN < Number.MAX_SAFE_INTEGER ? Math.min(usersCount, MAX_USERS_GNN) : usersCount;
+    for (let skip = 0; skip < maxUsersToProcess; skip += BATCH_SIZE_GNN) {
       const users = await User.find({ 'interactionHistory.0': { $exists: true } })
         .select('_id interactionHistory')
         .skip(skip)
@@ -469,7 +486,8 @@ class GNNRecommender {
       this.performMemoryCleanup();
     }
 
-    for (let skip = 0; skip < productsCount && skip < MAX_PRODUCTS_GNN; skip += BATCH_SIZE_GNN) {
+    const maxProductsToProcess = MAX_PRODUCTS_GNN < Number.MAX_SAFE_INTEGER ? Math.min(productsCount, MAX_PRODUCTS_GNN) : productsCount;
+    for (let skip = 0; skip < maxProductsToProcess; skip += BATCH_SIZE_GNN) {
       const products = await Product.find()
         .select('_id compatibleProducts')
         .skip(skip)
@@ -520,7 +538,9 @@ class GNNRecommender {
 
     const n = nodeIds.length;
     const maxNodes = MAX_NODES;
-    const usedNodeIds = n > maxNodes ? nodeIds.sort(() => 0.5 - Math.random()).slice(0, maxNodes) : nodeIds;
+    const usedNodeIds = (maxNodes < Number.MAX_SAFE_INTEGER && n > maxNodes) 
+      ? nodeIds.sort(() => 0.5 - Math.random()).slice(0, maxNodes) 
+      : nodeIds;
 
     const features = tf.stack(
       usedNodeIds.map(id => userIds.has(id) ? this.userEmbeddings.get(id) : this.productEmbeddings.get(id))
@@ -1379,8 +1399,15 @@ class GNNRecommender {
     return products;
   }
 
-  async recommendOutfits(userId, { productId = null, k = 12 } = {}) {
-    const user = await this.ensureUserWithHistory(userId, { requireGender: true });
+  async recommendOutfits(userId, { productId = null, k = 12, gender = null } = {}) {
+    const user = await this.ensureUserWithHistory(userId, { requireGender: false });
+    
+    if (gender && ['male', 'female', 'other'].includes(gender.toLowerCase())) {
+      user.gender = gender.toLowerCase();
+    } else if (!user.gender) {
+      user.gender = 'other';
+    }
+    
     if (!productId) {
       throw new Error('productId is required to build outfit');
     }
@@ -1465,9 +1492,9 @@ class GNNRecommender {
     scoredProducts.sort((a, b) => b.score - a.score);
     let rankedProducts = scoredProducts.map(item => item.product);
 
-    const gender = user.gender;
-    const genderAllow = gender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
-                      : gender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
+    const userGender = user.gender;
+    const genderAllow = userGender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
+                      : userGender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
                       : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
 
     let filtered = rankedProducts.filter(p => genderAllow.has(p.category) && !this.violatesGenderKeywords(user, p));

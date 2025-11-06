@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recommend - Report</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111827; }
+    header { padding: 16px; background: #111827; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+    main { padding: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .btn { border: 1px solid #111827; background: #111827; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    a { color: #fff; text-decoration: none; margin-right: 12px; }
+    nav a { color: #fff; }
+    input { padding:8px;border:1px solid #e5e7eb;border-radius:8px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>Recommend</div>
+    <nav>
+      <a href="/report">Home</a>
+      <a href="/report/datasets.html">Datasets</a>
+      <a href="/report/evaluation.html">Evaluation</a>
+      <a href="/report/train.html">Train</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h3>Personalize</h3>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <input id="userId" placeholder="userId" style="min-width:240px" />
+        <input id="productId" placeholder="productId (optional)" style="min-width:240px" />
+        <button class="btn" onclick="gnn()">GNN</button>
+        <button class="btn" onclick="hybrid()">Hybrid</button>
+      </div>
+      <div style="overflow:auto;margin-top:12px">
+        <table>
+          <thead>
+            <tr>
+              <th>name</th><th>category</th><th>brand</th><th>price</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <pre id="raw" style="background:#f9fafb;padding:8px;border-radius:8px;margin-top:8px"></pre>
+    </div>
+  </main>
+
+  <script>
+    function renderProducts(list) {
+      const tbody = document.getElementById('rows');
+      tbody.innerHTML = '';
+      (list||[]).forEach(p => {
+        const tr = document.createElement('tr');
+        const cols = [p.name, p.category, p.brand, p.price];
+        cols.forEach(c => { const td=document.createElement('td'); td.textContent=(c==null?'':String(c)); tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+    }
+    async function gnn() {
+      const userId = document.getElementById('userId').value.trim();
+      const productId = document.getElementById('productId').value.trim();
+      if (!userId) { alert('Nhập userId'); return; }
+      const url = `/api/recommend/gnn/personalize/${encodeURIComponent(userId)}?k=9${productId?`&productId=${encodeURIComponent(productId)}`:''}`;
+      const r = await fetch(url); const j = await r.json();
+      document.getElementById('raw').textContent = JSON.stringify(j, null, 2);
+      renderProducts(j?.data?.products || j?.products);
+    }
+    async function hybrid() {
+      const userId = document.getElementById('userId').value.trim();
+      const productId = document.getElementById('productId').value.trim();
+      if (!userId) { alert('Nhập userId'); return; }
+      const url = `/api/recommend/hybrid/personalize/${encodeURIComponent(userId)}?k=9${productId?`&productId=${encodeURIComponent(productId)}`:''}`;
+      const r = await fetch(url); const j = await r.json();
+      document.getElementById('raw').textContent = JSON.stringify(j, null, 2);
+      renderProducts(j?.data?.products || j?.products);
+    }
+  </script>
+</body>
+</html>
+
+

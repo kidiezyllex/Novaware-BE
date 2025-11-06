@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Train - Report</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111827; }
+    header { padding: 16px; background: #111827; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+    main { padding: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .btn { border: 1px solid #111827; background: #111827; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    a { color: #fff; text-decoration: none; margin-right: 12px; }
+    nav a { color: #fff; }
+    pre { background:#f9fafb; padding:8px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>Train</div>
+    <nav>
+      <a href="/report">Home</a>
+      <a href="/report/datasets.html">Datasets</a>
+      <a href="/report/evaluation.html">Evaluation</a>
+      <a href="/report/recommend.html">Recommend</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <h3>Incremental Training</h3>
+      <button class="btn" onclick="train()">Start Training (GNN + Hybrid)</button>
+      <pre id="result">(result)</pre>
+    </div>
+    <div class="card">
+      <h3>Loss/Accuracy (Placeholder)</h3>
+      <p>Vui lòng gắn ảnh biểu đồ loss/accuracy từ log huấn luyện hoặc hệ thống giám sát.</p>
+    </div>
+    <div class="card">
+      <h3>Embeddings & Comparison (Placeholder)</h3>
+      <p>Gắn bảng embedding node và bảng so sánh rating thực tế vs dự đoán.</p>
+    </div>
+  </main>
+
+  <script>
+    async function train() {
+      const r = await fetch('/api/report/models/train', { method: 'POST' });
+      const j = await r.json();
+      document.getElementById('result').textContent = JSON.stringify(j, null, 2);
+    }
+  </script>
+</body>
+</html>
+
+

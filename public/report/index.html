@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report - Fashion Recommendation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111827; }
+    header { padding: 20px; background: #111827; color: #fff; }
+    header h1 { margin: 0; font-size: 20px; }
+    main { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 60px); }
+    nav { border-right: 1px solid #e5e7eb; padding: 20px; position: sticky; top: 0; height: calc(100vh - 60px); overflow: auto; }
+    nav a { display: block; color: #111827; text-decoration: none; padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; }
+    nav a:hover { background: #f3f4f6; }
+    section { padding: 24px 28px; border-bottom: 1px solid #f3f4f6; }
+    h2 { margin: 0 0 12px; font-size: 18px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    code, pre { background: #f9fafb; padding: 12px; border-radius: 8px; display: block; overflow: auto; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+    .btn { appearance: none; border: 1px solid #111827; background: #111827; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    .btn.secondary { background: #fff; color: #111827; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; font-size: 14px; }
+    .muted { color: #6b7280; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fashion Recommendation – Report</h1>
+  </header>
+  <main>
+    <nav>
+      <a href="#install">1. Hướng dẫn cài đặt</a>
+      <a href="#start">2. Khởi động & truy cập</a>
+      <a href="#intro">3. Giới thiệu hệ thống</a>
+      <a href="#dataset">4. Tập dữ liệu</a>
+      <a href="#gnn">5. Huấn luyện – GNN</a>
+      <a href="#hybrid">5. Huấn luyện – Hybrid</a>
+      <a href="#eval">6. Đánh giá mô hình</a>
+      <a href="#web">7. Tích hợp website</a>
+      <a href="#best">8. Lý do chọn mô hình</a>
+      <a href="#conclusion">9. Kết luận</a>
+    </nav>
+    <div>
+      <section id="install">
+        <h2>1. Hướng dẫn cài đặt</h2>
+        <div class="card">
+          <button class="btn" onclick="loadInstallInfo()">Tải package.json</button>
+          <pre id="pkgContent" class="muted">(nhấn nút để hiển thị)</pre>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h3>Ảnh: Nội dung package.json</h3>
+            <div class="muted">Chụp từ khối bên trên.</div>
+          </div>
+          <div class="card">
+            <h3>Ảnh: Terminal khi cài đặt</h3>
+            <pre>npm install</pre>
+          </div>
+          <div class="card">
+            <h3>Ảnh: Giao diện code trước khi khởi động</h3>
+            <div class="muted">Mở VS Code/IDE chụp màn hình.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="start">
+        <h2>2. Khởi động & truy cập</h2>
+        <div class="card">
+          <pre>npm start</pre>
+          <div id="health" class="muted">(trạng thái server sẽ hiển thị ở đây)</div>
+          <button class="btn" onclick="checkHealth()">Kiểm tra Health</button>
+        </div>
+      </section>
+
+      <section id="intro">
+        <h2>3. Giới thiệu hệ thống</h2>
+        <div class="card">
+          <p>- Mục tiêu: hệ thống gợi ý thời trang cá nhân hóa và phối đồ.</p>
+          <p>- Personallize: gợi ý theo hành vi, sở thích, nhân khẩu học.</p>
+          <p>- Out Fit: đề xuất các bộ phối đồ hoàn chỉnh tương thích.</p>
+          <p>- Lĩnh vực: Fashion.</p>
+        </div>
+      </section>
+
+      <section id="dataset">
+        <h2>4. Tập dữ liệu</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Mẫu Amazon_Fashion.jsonl</h3>
+            <button class="btn" onclick="loadSample('Amazon_Fashion.jsonl', 8)">Tải mẫu</button>
+            <pre id="sampleReviews" class="muted">(nhấn để tải)</pre>
+            <div style="overflow:auto;margin-top:8px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>rating</th><th>title</th><th>text</th><th>user_id</th><th>timestamp</th><th>verified_purchase</th>
+                  </tr>
+                </thead>
+                <tbody id="sampleReviewsTable"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Mẫu meta_Amazon_Fashion.jsonl</h3>
+            <button class="btn" onclick="loadSample('meta_Amazon_Fashion.jsonl', 8)">Tải mẫu</button>
+            <pre id="sampleMeta" class="muted">(nhấn để tải)</pre>
+            <div style="overflow:auto;margin-top:8px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>title</th><th>average_rating</th><th>rating_number</th><th>description</th><th>images</th><th>store</th><th>categories</th><th>details</th>
+                  </tr>
+                </thead>
+                <tbody id="sampleMetaTable"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Phân bố Rating</h3>
+            <canvas id="ratingChart" height="200"></canvas>
+          </div>
+          <div class="card">
+            <h3>Thống kê</h3>
+            <div id="stats" class="muted">(nhấn tải để hiển thị)</div>
+            <button class="btn" onclick="loadStats()">Tải thống kê</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="gnn">
+        <h2>5.1. Mô hình GNN (TensorFlow.js)</h2>
+        <div class="grid">
+          <div class="card"><h3>Sơ đồ đồ thị</h3><div class="muted">Vẽ sơ đồ graph (ảnh minh họa).</div></div>
+          <div class="card"><h3>Biểu đồ Loss/Accuracy</h3><div class="muted">Minh họa training log.</div></div>
+          <div class="card"><h3>Bảng Embedding Node</h3><div class="muted">Xuất từ models/gnn_embeddings.json (sau train).</div></div>
+          <div class="card"><h3>Bảng rating thực vs dự đoán</h3><div class="muted">Bảng minh họa.</div></div>
+        </div>
+      </section>
+
+      <section id="hybrid">
+        <h2>5.2. Mô hình Hybrid</h2>
+        <div class="grid">
+          <div class="card"><h3>Ma trận TF-IDF</h3><div class="muted">Minh họa top từ vựng.</div></div>
+          <div class="card"><h3>Cosine Similarity</h3><div class="muted">Ma trận thu gọn.</div></div>
+          <div class="card"><h3>Top-k hàng xóm</h3><div class="muted">Bảng minh họa.</div></div>
+          <div class="card"><h3>Vector đặc trưng</h3><div class="muted">Hiển thị mẫu featureVector.</div></div>
+        </div>
+      </section>
+
+      <section id="eval">
+        <h2>6. Đánh giá mô hình</h2>
+        <div class="card">
+          <button class="btn" onclick="runEvaluation()">Chạy đánh giá</button>
+          <button class="btn secondary" onclick="trainModels()" style="margin-left:8px">Huấn luyện mô hình</button>
+          <div class="muted" id="evalInfo">(kết quả sẽ hiển thị)</div>
+        </div>
+        <div class="card">
+          <h3>Bảng tổng hợp</h3>
+          <div style="overflow:auto">
+            <table id="evalTable">
+              <thead>
+                <tr>
+                  <th>Mô hình</th><th>MAPE</th><th>RMSE</th><th>Precision</th><th>Recall</th><th>F1</th><th>Thời gian</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Biểu đồ so sánh chỉ số</h3>
+          <canvas id="evalChart" height="220"></canvas>
+        </div>
+      </section>
+
+      <section id="web">
+        <h2>7. Tích hợp vào website</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Sơ đồ kiến trúc</h3>
+            <div class="muted">Frontend (Trang này) -> API Backend (/api/recommend & /api/report) -> MongoDB</div>
+          </div>
+          <div class="card">
+            <h3>Demo gợi ý</h3>
+            <div>
+              <input id="userId" placeholder="userId" style="padding:8px;border:1px solid #e5e7eb;border-radius:8px;width:60%" />
+              <input id="productId" placeholder="productId (optional)" style="padding:8px;border:1px solid #e5e7eb;border-radius:8px;width:38%" />
+            </div>
+            <div style="margin-top:8px">
+              <button class="btn" onclick="demoGnn()">GNN Personalize</button>
+              <button class="btn secondary" onclick="demoHybrid()">Hybrid Personalize</button>
+            </div>
+            <pre id="demoResult" class="muted" style="margin-top:8px">(kết quả sẽ hiển thị)</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="best">
+        <h2>8. Lý do chọn mô hình tốt nhất</h2>
+        <div class="card">
+          Dựa trên Precision, MAPE, cá nhân hóa và thời gian huấn luyện, Hybrid thường ổn định và dễ kiểm soát, còn GNN mạnh khi có đồ thị dày và nhiều tín hiệu tương tác.
+        </div>
+      </section>
+
+      <section id="conclusion">
+        <h2>9. Kết luận</h2>
+        <div class="card">
+          Hệ thống đạt hiệu quả tốt, có thể mở rộng real-time, A/B testing, multi-modal.
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    async function loadInstallInfo() {
+      const r = await fetch('/api/report/install-info');
+      const j = await r.json();
+      document.getElementById('pkgContent').textContent = JSON.stringify(j.data.packageJson, null, 2);
+    }
+    async function checkHealth() {
+      const r = await fetch('/healthcheck');
+      const j = await r.json();
+      document.getElementById('health').textContent = JSON.stringify(j, null, 2);
+    }
+    async function loadSample(file, n) {
+      const r = await fetch(`/api/report/dataset/sample?file=${encodeURIComponent(file)}&n=${n}`);
+      const j = await r.json();
+      const target = file.includes('meta') ? 'sampleMeta' : 'sampleReviews';
+      document.getElementById(target).textContent = JSON.stringify(j.data.rows, null, 2);
+      // render parsed table per required fields
+      if (!file.includes('meta')) {
+        const tbody = document.getElementById('sampleReviewsTable');
+        tbody.innerHTML = '';
+        (j.data.rows || []).forEach(row => {
+          const tr = document.createElement('tr');
+          const cols = [row.rating, row.title, row.text, row.user_id, row.timestamp, row.verified_purchase];
+          cols.forEach(c => { const td = document.createElement('td'); td.textContent = (c===undefined||c===null)?'':(typeof c==='object'?JSON.stringify(c):String(c)); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+      } else {
+        const tbody = document.getElementById('sampleMetaTable');
+        tbody.innerHTML = '';
+        (j.data.rows || []).forEach(row => {
+          const tr = document.createElement('tr');
+          const cols = [row.title, row.average_rating, row.rating_number, row.description, Array.isArray(row.images)?row.images.length:undefined, row.store, Array.isArray(row.categories)?row.categories.join(' / '):undefined, typeof row.details==='object'?Object.keys(row.details).length:undefined];
+          cols.forEach(c => { const td = document.createElement('td'); td.textContent = (c===undefined||c===null)?'':(typeof c==='object'?JSON.stringify(c):String(c)); tr.appendChild(td); });
+          tbody.appendChild(tr);
+        });
+      }
+    }
+    async function loadStats() {
+      const r = await fetch('/api/report/dataset/stats');
+      const j = await r.json();
+      document.getElementById('stats').textContent = JSON.stringify({
+        totalReviews: j.data.totalReviews,
+        uniqueUsers: j.data.uniqueUsers,
+        uniqueProducts: j.data.uniqueProducts
+      }, null, 2);
+      const hist = j.data.ratingHistogram || {};
+      const ctx = document.getElementById('ratingChart');
+      new Chart(ctx, {
+        type: 'bar',
+        data: { labels: Object.keys(hist), datasets: [{ label: 'Số lượng', data: Object.values(hist), backgroundColor: '#111827' }]},
+        options: { scales: { y: { beginAtZero: true } } }
+      });
+    }
+    async function runEvaluation() {
+      const r = await fetch('/api/report/evaluation/run');
+      const j = await r.json();
+      document.getElementById('evalInfo').textContent = `Thời gian GNN: ${j.data.gnnTimeMs} ms | Hybrid: ${j.data.hybridTimeMs} ms`;
+      const tbody = document.querySelector('#evalTable tbody');
+      tbody.innerHTML = '';
+      j.data.table.forEach(row => {
+        const tr = document.createElement('tr');
+        const cells = [row.model, row.MAPE, row.RMSE, row.Precision, row.Recall, row.F1, row.time];
+        cells.forEach(c => { const td = document.createElement('td'); td.textContent = c === null ? '-' : (typeof c === 'number' ? c.toFixed(4) : c); tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+      // chart
+      const labels = j.data.table.map(x => x.model);
+      const precision = j.data.table.map(x => (typeof x.Precision==='number'?x.Precision:null));
+      const recall = j.data.table.map(x => (typeof x.Recall==='number'?x.Recall:null));
+      const f1 = j.data.table.map(x => (typeof x.F1==='number'?x.F1:null));
+      const time = j.data.table.map(x => (typeof x.time==='number'?x.time:null));
+      const ctx = document.getElementById('evalChart');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Precision', data: precision, backgroundColor: '#111827' },
+            { label: 'Recall', data: recall, backgroundColor: '#4b5563' },
+            { label: 'F1', data: f1, backgroundColor: '#9ca3af' },
+            { label: 'Time (s)', data: time, backgroundColor: '#d1d5db', yAxisID: 'y1' }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true, position: 'left' },
+            y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false } }
+          }
+        }
+      });
+    }
+    async function trainModels() {
+      const r = await fetch('/api/report/models/train', { method: 'POST' });
+      const j = await r.json();
+      alert(`GNN: ${j.data.gnnTime} | Hybrid: ${j.data.hybridTime}`);
+    }
+    async function demoGnn() {
+      const userId = document.getElementById('userId').value.trim();
+      const productId = document.getElementById('productId').value.trim();
+      if (!userId) { alert('Nhập userId'); return; }
+      const url = `/api/recommend/gnn/personalize/${encodeURIComponent(userId)}?k=9${productId ? `&productId=${encodeURIComponent(productId)}` : ''}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      document.getElementById('demoResult').textContent = JSON.stringify(j, null, 2);
+    }
+    async function demoHybrid() {
+      const userId = document.getElementById('userId').value.trim();
+      const productId = document.getElementById('productId').value.trim();
+      if (!userId) { alert('Nhập userId'); return; }
+      const url = `/api/recommend/hybrid/personalize/${encodeURIComponent(userId)}?k=9${productId ? `&productId=${encodeURIComponent(productId)}` : ''}`;
+      const r = await fetch(url);
+      const j = await r.json();
+      document.getElementById('demoResult').textContent = JSON.stringify(j, null, 2);
+    }
+  </script>
+</body>
+</html>
+
+

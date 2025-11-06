@@ -41,6 +41,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
       height: user.height,
       weight: user.weight,
       gender: user.gender,
+      age: user.age,
       isAdmin: user.isAdmin,
     };
     sendSuccess(res, 200, "User profile retrieved successfully", userData);
@@ -91,6 +92,9 @@ const updateUserProfile = asyncHandler(async (req, res) => {
     user.height = req.body.height || user.height;
     user.weight = req.body.weight || user.weight;
     user.gender = req.body.gender || user.gender;
+    if (req.body.age !== undefined) {
+      user.age = Number(req.body.age);
+    }
 
     const updatedUser = await user.save();
 
@@ -101,6 +105,7 @@ const updateUserProfile = asyncHandler(async (req, res) => {
       height: updatedUser.height,
       weight: updatedUser.weight,
       gender: updatedUser.gender,
+      age: updatedUser.age,
       isAdmin: updatedUser.isAdmin,
       token: generateToken(updatedUser._id),
     };
@@ -434,32 +439,70 @@ const getUsersForTesting = asyncHandler(async (req, res) => {
   let totalCount = 0;
 
   if (type === 'personalization') {
-    // Điều kiện: User có ít nhất 1 interaction trong interactionHistory
-    totalCount = await User.countDocuments({
-      'interactionHistory.0': { $exists: true }
-    });
+    const totalCountResult = await User.aggregate([
+      {
+        $match: {
+          'interactionHistory.1': { $exists: true }
+        }
+      },
+      {
+        $project: {
+          interactionCount: { $size: '$interactionHistory' }
+        }
+      },
+      {
+        $count: 'total'
+      }
+    ]);
+    
+    totalCount = totalCountResult.length > 0 ? totalCountResult[0].total : 0;
 
-    users = await User.find({
-      'interactionHistory.0': { $exists: true }
-    })
-    .select('_id name email interactionHistory.length')
-    .limit(limit)
-    .skip(skip);
+    users = await User.aggregate([
+      {
+        $match: {
+          'interactionHistory.1': { $exists: true }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          email: 1,
+          interactionHistory: 1,
+          interactionCount: { $size: '$interactionHistory' }
+        }
+      },
+      {
+        $sort: { interactionCount: -1 }
+      },
+      {
+        $skip: skip
+      },
+      {
+        $limit: limit
+      }
+    ]);
   } else if (type === 'outfit-suggestions') {
     // Điều kiện: Có sản phẩm thuộc ít nhất 2 category: Tops, Bottoms, Dresses, Shoes, Accessories
+    // Và có ít nhất 2 interactions (interactionCount > 1)
     const targetCategories = ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories'];
     
-    // Lấy tất cả users có interactionHistory
+    // Lấy tất cả users có ít nhất 2 interactions
     const usersWithInteractions = await User.find({
-      'interactionHistory.0': { $exists: true }
+      'interactionHistory.1': { $exists: true }
     }).populate({
       path: 'interactionHistory.productId',
       select: 'category',
       match: { category: { $in: targetCategories } }
     });
 
-    // Lọc users có sản phẩm từ ít nhất 2 categories khác nhau
+    // Lọc users có sản phẩm từ ít nhất 2 categories khác nhau và có ít nhất 2 interactions
     const filteredUsers = usersWithInteractions.filter(user => {
+      // Đảm bảo có ít nhất 2 interactions
+      if (!user.interactionHistory || user.interactionHistory.length < 2) {
+        return false;
+      }
+      
       const categories = new Set();
       user.interactionHistory.forEach(interaction => {
         if (interaction.productId && interaction.productId.category) {
@@ -469,9 +512,16 @@ const getUsersForTesting = asyncHandler(async (req, res) => {
       return categories.size >= 2;
     });
 
+    // Sắp xếp theo interactionCount giảm dần (users có nhiều interactions nhất)
+    filteredUsers.sort((a, b) => {
+      const countA = a.interactionHistory?.length || 0;
+      const countB = b.interactionHistory?.length || 0;
+      return countB - countA;
+    });
+
     totalCount = filteredUsers.length;
     
-    // Áp dụng phân trang
+    // Áp dụng phân trang (sau khi đã sắp xếp)
     users = filteredUsers
       .slice(skip, skip + limit)
       .map(user => ({
@@ -491,7 +541,9 @@ const getUsersForTesting = asyncHandler(async (req, res) => {
       userId: user._id,
       name: user.name,
       email: user.email,
-      ...(type === 'personalization' && { interactionCount: user.interactionHistory?.length || 0 }),
+      ...(type === 'personalization' && { 
+        interactionCount: user.interactionCount || user.interactionHistory?.length || 0 
+      }),
       ...(type === 'outfit-suggestions' && { 
         interactionCount: user.interactionCount,
         categories: user.categories 

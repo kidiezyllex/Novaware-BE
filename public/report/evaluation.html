@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Evaluation - Report</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; color: #111827; }
+    header { padding: 16px; background: #111827; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+    main { padding: 16px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .btn { border: 1px solid #111827; background: #111827; color: #fff; padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; font-size: 14px; }
+    a { color: #fff; text-decoration: none; margin-right: 12px; }
+    nav a { color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>Evaluation</div>
+    <nav>
+      <a href="/report">Home</a>
+      <a href="/report/datasets.html">Datasets</a>
+      <a href="/report/train.html">Train</a>
+      <a href="/report/recommend.html">Recommend</a>
+    </nav>
+  </header>
+  <main>
+    <div class="card">
+      <button class="btn" onclick="runEvaluation()">Run Evaluation</button>
+      <pre id="meta"></pre>
+    </div>
+    <div class="card">
+      <div style="overflow:auto">
+        <table id="evalTable">
+          <thead>
+            <tr>
+              <th>Mô hình</th><th>MAPE</th><th>RMSE</th><th>Precision</th><th>Recall</th><th>F1</th><th>Thời gian</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <canvas id="chart" height="240"></canvas>
+    </div>
+    <div class="card">
+      <h3>TF-IDF & Cosine Similarity (Sample)</h3>
+      <button class="btn" onclick="loadTfidf()">Load TF-IDF Sample</button>
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:8px">
+        <div style="overflow:auto">
+          <table id="tfidfTerms"><thead></thead><tbody></tbody></table>
+        </div>
+        <div style="overflow:auto">
+          <table id="cosine"><thead></thead><tbody></tbody></table>
+        </div>
+        <div style="overflow:auto">
+          <table id="topk"><thead><tr><th>name</th><th>similarity</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>GNN Embeddings (Sample)</h3>
+      <button class="btn" onclick="loadEmbeddings()">Load Embeddings</button>
+      <div style="overflow:auto;margin-top:8px">
+        <table id="emb"><thead><tr><th>type</th><th>id</th><th>vec[0..7]</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Predictions vs Actual (Sample)</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <input id="userIdPred" placeholder="userId" style="padding:8px;border:1px solid #e5e7eb;border-radius:8px" />
+        <button class="btn" onclick="loadPred()">Compare</button>
+        <span id="prec" style="margin-left:8px"></span>
+      </div>
+      <div style="overflow:auto">
+        <table id="pred"><thead><tr><th>productId</th><th>hit</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Training Metrics (Loss/Accuracy)</h3>
+      <button class="btn" onclick="loadMetrics()">Load Metrics</button>
+      <canvas id="metrics" height="220" style="margin-top:8px"></canvas>
+    </div>
+  </main>
+
+  <script>
+    async function runEvaluation() {
+      const r = await fetch('/api/report/evaluation/run');
+      const j = await r.json();
+      document.getElementById('meta').textContent = JSON.stringify({ ranAt: j.data.ranAt, durationMs: j.data.durationMs }, null, 2);
+      const tbody = document.querySelector('#evalTable tbody');
+      tbody.innerHTML = '';
+      j.data.table.forEach(row => {
+        const tr = document.createElement('tr');
+        const cells = [row.model, row.MAPE, row.RMSE, row.Precision, row.Recall, row.F1, row.time];
+        cells.forEach(c => { const td=document.createElement('td'); td.textContent=(c===null?'-':(typeof c==='number'?c.toFixed(4):c)); tr.appendChild(td); });
+        tbody.appendChild(tr);
+      });
+      const labels = j.data.table.map(x => x.model);
+      const precision = j.data.table.map(x => (typeof x.Precision==='number'?x.Precision:null));
+      const recall = j.data.table.map(x => (typeof x.Recall==='number'?x.Recall:null));
+      const f1 = j.data.table.map(x => (typeof x.F1==='number'?x.F1:null));
+      const time = j.data.table.map(x => (typeof x.time==='number'?x.time:null));
+      const ctx = document.getElementById('chart');
+      new Chart(ctx, { type:'bar', data:{ labels, datasets:[
+        { label:'Precision', data:precision, backgroundColor:'#111827' },
+        { label:'Recall', data:recall, backgroundColor:'#4b5563' },
+        { label:'F1', data:f1, backgroundColor:'#9ca3af' },
+        { label:'Time (s)', data:time, backgroundColor:'#d1d5db', yAxisID:'y1' }
+      ]}, options:{ responsive:true, scales:{ y:{ beginAtZero:true, position:'left' }, y1:{ beginAtZero:true, position:'right', grid:{ drawOnChartArea:false } } } } });
+    }
+  </script>
+  <script>
+    async function loadTfidf() {
+      const r = await fetch('/api/report/hybrid/tfidf-sample?limit=12&k=5');
+      const j = await r.json();
+      // terms table (docTerm subset)
+      const thead = document.querySelector('#tfidfTerms thead');
+      const tbody = document.querySelector('#tfidfTerms tbody');
+      thead.innerHTML = '';
+      tbody.innerHTML = '';
+      const head = document.createElement('tr');
+      head.innerHTML = '<th>doc</th>' + j.data.vocab.map(t=>`<th>${t}</th>`).join('');
+      thead.appendChild(head);
+      j.data.docTerm.forEach((row, i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${j.data.products[i]?.name||i}</td>` + row.map(v=>`<td>${v.toFixed(3)}</td>`).join('');
+        tbody.appendChild(tr);
+      });
+      // cosine table (small)
+      const cthead = document.querySelector('#cosine thead');
+      const ctbody = document.querySelector('#cosine tbody');
+      cthead.innerHTML = '';
+      ctbody.innerHTML = '';
+      const ch = document.createElement('tr');
+      ch.innerHTML = '<th></th>' + j.data.products.map(p=>`<th>${p.name}</th>`).join('');
+      cthead.appendChild(ch);
+      j.data.cosineMatrix.forEach((row, i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${j.data.products[i].name}</td>` + row.map(v=>`<td>${v.toFixed(3)}</td>`).join('');
+        ctbody.appendChild(tr);
+      });
+      // top-k
+      const ttbody = document.querySelector('#topk tbody');
+      ttbody.innerHTML = '';
+      j.data.topk.forEach(x=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${x.name}</td><td>${x.similarity.toFixed(3)}</td>`;
+        ttbody.appendChild(tr);
+      });
+    }
+    async function loadEmbeddings() {
+      const r = await fetch('/api/report/gnn/embeddings-sample?limit=20');
+      const j = await r.json();
+      const tbody = document.querySelector('#emb tbody');
+      tbody.innerHTML = '';
+      (j.data.users||[]).forEach(u=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>user</td><td>${u.id}</td><td>${JSON.stringify(u.vec)}</td>`;
+        tbody.appendChild(tr);
+      });
+      (j.data.products||[]).forEach(p=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>product</td><td>${p.id}</td><td>${JSON.stringify(p.vec)}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    async function loadPred() {
+      const userId = document.getElementById('userIdPred').value.trim();
+      if (!userId) { alert('Nhập userId'); return; }
+      const r = await fetch(`/api/report/predictions/sample?userId=${encodeURIComponent(userId)}&k=10`);
+      const j = await r.json();
+      const tbody = document.querySelector('#pred tbody');
+      tbody.innerHTML = '';
+      (j.data.rows||[]).forEach(x=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${x.productId}</td><td>${x.hit?'✓':'✗'}</td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('prec').textContent = `Precision@k: ${Number(j.data.precision||0).toFixed(3)}`;
+    }
+    async function loadMetrics() {
+      const r = await fetch('/api/report/gnn/training-metrics');
+      const j = await r.json();
+      const sessions = j.data.sessions||[];
+      const last = sessions[sessions.length-1];
+      if (!last) return;
+      const labels = (last.metrics||[]).map(m=>m.step);
+      const loss = (last.metrics||[]).map(m=>m.loss);
+      const acc = (last.metrics||[]).map(m=>m.acc);
+      const ctx = document.getElementById('metrics');
+      new Chart(ctx, { type:'line', data:{ labels, datasets:[
+        { label:'Loss', data:loss, borderColor:'#ef4444', backgroundColor:'transparent' },
+        { label:'Accuracy', data:acc, borderColor:'#10b981', backgroundColor:'transparent' }
+      ]}, options:{ responsive:true, scales:{ y:{ beginAtZero:true } } } });
+    }
+  </script>
+</body>
+</html>
+
+

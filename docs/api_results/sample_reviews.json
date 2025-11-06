@@ -1,0 +1,29 @@
+{
+  "exists": true,
+  "rows": [
+    {
+      "rating": 5,
+      "title": "Pretty locket",
+      "text": "I think this locket is really pretty. The inside back is a solid silver depression and the front is a dome that is not solid (knotted). You could use it to store a small photo, lock of hair, etc but I use it when I need to carry medication with me. Closes securely. High quality & very pretty.",
+      "images": [],
+      "asin": "B00LOPVX74",
+      "parent_asin": "B00LOPVX74",
+      "user_id": "AGBFYI2DDIKXC5Y4FARTYDTQBMFQ",
+      "timestamp": 1578528394489,
+      "helpful_vote": 3,
+      "verified_purchase": true
+    },
+    {
+      "rating": 5,
+      "title": "A",
+      "text": "Great",
+      "images": [],
+      "asin": "B07B4JXK8D",
+      "parent_asin": "B07B4JXK8D",
+      "user_id": "AFQLNQNQYFWQZPJQZS6V3NZU4QBQ",
+      "timestamp": 1608426246701,
+      "helpful_vote": 0,
+      "verified_purchase": true
+    }
+  ]
+}

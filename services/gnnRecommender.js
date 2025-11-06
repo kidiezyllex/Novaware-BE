@@ -3,7 +3,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
-// abc
 const MAX_NODES = process.env.MAX_NODES_GNN ? parseInt(process.env.MAX_NODES_GNN) : Number.MAX_SAFE_INTEGER;
 const MAX_USERS_GNN = process.env.MAX_USERS_GNN ? parseInt(process.env.MAX_USERS_GNN) : Number.MAX_SAFE_INTEGER;
 const MAX_PRODUCTS_GNN = process.env.MAX_PRODUCTS_GNN ? parseInt(process.env.MAX_PRODUCTS_GNN) : Number.MAX_SAFE_INTEGER;
@@ -44,6 +43,20 @@ class GNNRecommender {
     }
     if (user.gender === 'female') {
       return this.containsGenderKeywords(product, MALE_KWS);
+    }
+    return false;
+  }
+
+  containsChildKeywords(product) {
+    const name = (product?.name || '').toLowerCase();
+    const CHILD_KWS = ['kid', 'kids', "kid's", "kids'", 'baby', 'babies', "baby's", "babies'", 'toddler', 'toddlers', "toddler's", "toddlers'", 'infant', 'infants', "infant's", "infants'", 'child', 'children', "child's", "children's", 'junior', 'juniors', "junior's", "juniors'", 'youth', 'youths', "youth's", "youths'"];
+    return CHILD_KWS.some(k => name.includes(k));
+  }
+
+  violatesAgeRestriction(user, product) {
+    if (!user || !user.age) return false;
+    if (user.age > 12) {
+      return this.containsChildKeywords(product);
     }
     return false;
   }
@@ -1067,6 +1080,7 @@ class GNNRecommender {
       const product = productMap.get(prodId);
       if (!product) continue;
       if (this.violatesGenderKeywords(user, product)) continue;
+      if (this.violatesAgeRestriction(user, product)) continue;
       
       const baseScore = baseScores[idx];
       const { score, factors } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
@@ -1267,12 +1281,18 @@ class GNNRecommender {
       const productMap = new Map(candidateProducts.map(p => [p._id.toString(), p]));
 
       const scoredProducts = [];
+      const scoredProductsSameCategoryOrBrand = [];
+      
       for (const idx of topCandidateIndices) {
         const prodId = validProductIds[idx];
         const product = productMap.get(prodId);
         if (!product) continue;
         if (this.violatesGenderKeywords(user, product)) continue;
+        if (this.violatesAgeRestriction(user, product)) continue;
 
+        const hasSameCategory = product.category === seedProduct.category;
+        const hasSameBrand = product.brand === seedProduct.brand;
+        
         const baseScore = combinedScores[idx];
         
         let categoryBonus = 1.0;
@@ -1287,17 +1307,33 @@ class GNNRecommender {
 
         const { score, factors } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore * categoryBonus * brandBonus);
 
-        scoredProducts.push({
+        const scoredItem = {
           product,
           score,
           factors
-        });
+        };
+
+        if (hasSameCategory || hasSameBrand) {
+          scoredProductsSameCategoryOrBrand.push(scoredItem);
+        } else {
+          scoredProducts.push(scoredItem);
+        }
       }
 
-      const topProducts = scoredProducts
-        .sort((a, b) => b.score - a.score)
-        .slice(0, k)
-        .map(item => item.product);
+      let topProducts = [];
+      if (scoredProductsSameCategoryOrBrand.length > 0) {
+        console.log(`✅ Found ${scoredProductsSameCategoryOrBrand.length} products with same category/brand, using only those`);
+        topProducts = scoredProductsSameCategoryOrBrand
+          .sort((a, b) => b.score - a.score)
+          .slice(0, k)
+          .map(item => item.product);
+      } else {
+        console.log(`⚠️  No products with same category/brand, using products from general pool (${scoredProducts.length} available)`);
+        topProducts = scoredProducts
+          .sort((a, b) => b.score - a.score)
+          .slice(0, k)
+          .map(item => item.product);
+      }
 
       const explanation = this.generatePersonalizedExplanation(user, seedProduct, historyAnalysis, topProducts);
 
@@ -1312,12 +1348,32 @@ class GNNRecommender {
       const isColdStartCase = msg.includes('no interaction history') || msg.includes('not found in training data') || msg.includes('User not found');
       if (!isColdStartCase) throw error;
       const cold = await this.recommendColdStart(userId, k);
+      
+      const { productId } = opts || {};
+      let filteredCold = cold;
+      if (productId && cold.length > 0) {
+        try {
+          const seedProduct = await Product.findById(productId).select('_id category brand').lean();
+          if (seedProduct) {
+            filteredCold = cold.filter(p => {
+              if (!p) return false;
+              const hasSameCategory = p.category === seedProduct.category;
+              const hasSameBrand = p.brand === seedProduct.brand;
+              return hasSameCategory || hasSameBrand;
+            });
+          }
+        } catch (_) {}
+      }
+      
       const user = await User.findById(userId).select('gender age');
+      if (user && user.age > 12) {
+        filteredCold = filteredCold.filter(p => !this.containsChildKeywords(p));
+      }
       const coldExplanation = user 
-        ? `Based on ${user.gender ? `${user.gender === 'male' ? 'male' : 'female'} gender` : ''} ${user.age ? `age ${user.age}` : ''}. Using most popular products due to no interaction history`
-        : 'Using most popular products due to no interaction history';
+        ? `Based on ${user.gender ? `${user.gender === 'male' ? 'male' : 'female'} gender` : ''} ${user.age ? `age ${user.age}` : ''}. Using most popular products due to no interaction history${productId ? ' (filtered by same category or brand)' : ''}`
+        : `Using most popular products due to no interaction history${productId ? ' (filtered by same category or brand)' : ''}`;
       return { 
-        products: cold, 
+        products: filteredCold, 
         model: 'ColdStart (TopRated)', 
         timestamp: new Date().toISOString(),
         explanation: coldExplanation
@@ -1330,6 +1386,7 @@ class GNNRecommender {
     
     if (seedProduct) {
       reasons.push(`Based on the product you are viewing: ${seedProduct.name} (${seedProduct.category})`);
+      reasons.push(`Only showing products with same category or same brand as the product you are viewing`);
     }
     
     if (user.gender) {
@@ -1483,6 +1540,7 @@ class GNNRecommender {
       const product = productMap.get(prodId);
       if (!product) continue;
       if (this.violatesGenderKeywords(user, product)) continue;
+      if (this.violatesAgeRestriction(user, product)) continue;
       
       const baseScore = baseScores[idx];
       const { score } = this.calculatePersonalizedScore(product, user, historyAnalysis, baseScore);
@@ -1494,8 +1552,8 @@ class GNNRecommender {
 
     const userGender = user.gender;
     const genderAllow = userGender === 'male' ? new Set(['Tops', 'Bottoms', 'Shoes'])
-                      : userGender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes'])
-                      : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
+                      : userGender === 'female' ? new Set(['Dresses', 'Accessories', 'Shoes', 'Tops', 'Bottoms'])
+                      : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes', 'Dresses']);
 
     let filtered = rankedProducts.filter(p => genderAllow.has(p.category) && !this.violatesGenderKeywords(user, p));
     if (preferredCategories.size > 0) {
@@ -1504,11 +1562,40 @@ class GNNRecommender {
 
     let seedProduct = await Product.findById(productId).select('_id name description images category price sale brand outfitTags colors').lean();
     if (seedProduct) {
-      filtered = [seedProduct, ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), ...filtered.filter(p => p.category !== seedProduct.category)];
+      const seedInFiltered = filtered.find(p => p._id.toString() === productId);
+      if (!seedInFiltered) {
+        filtered = [seedProduct, ...filtered];
+      } else {
+        filtered = [seedProduct, ...filtered.filter(p => p._id.toString() !== productId && p.category === seedProduct.category), ...filtered.filter(p => p._id.toString() !== productId && p.category !== seedProduct.category)];
+      }
     }
 
-    const topProducts = filtered.slice(0, Math.max(k * 2, 20));
+    let topProducts = filtered.slice(0, Math.max(k * 2, 20));
+    console.log(`📦 Filtered products for outfit generation: ${filtered.length} total, using top ${topProducts.length}`);
+    console.log(`   Seed product: ${seedProduct?.name} (${seedProduct?.category})`);
+    
+    if (topProducts.length < 5 && seedProduct) {
+      console.log(`   ⚠️  Not enough products in pool (${topProducts.length}), fetching more from database...`);
+      const additionalProducts = await Product.find({
+        _id: { $ne: productId },
+        category: { $in: Array.from(genderAllow) }
+      })
+        .select('_id name description images category price sale brand outfitTags colors')
+        .limit(20)
+        .lean();
+      
+      const existingIds = new Set(topProducts.map(p => p._id.toString()));
+      const newProducts = additionalProducts.filter(p => !existingIds.has(p._id.toString()));
+      
+      topProducts = [...topProducts, ...newProducts].slice(0, Math.max(k * 2, 20));
+      console.log(`   ✅ Added ${newProducts.length} more products, total now: ${topProducts.length}`);
+    }
+    
+    console.log(`   Products in pool: ${topProducts.map(p => `${p.name} (${p.category})`).join(', ')}`);
+    
     const outfits = await this.generateOutfitsFromSeed(topProducts, user, seedProduct, k);
+    console.log(`🎯 Final outfits count: ${outfits.length}`);
+    
     const explanation = this.generateOutfitExplanation(user, seedProduct, outfits, historyAnalysis);
     
     return { outfits, model: 'GNN (GCN)', timestamp: new Date().toISOString(), explanation };
@@ -1555,7 +1642,12 @@ class GNNRecommender {
   async generateOutfitsFromSeed(products, user, seedProduct, k = 12) {
     const outfits = [];
     const gender = user.gender || 'other';
-    if (!seedProduct) return outfits;
+    if (!seedProduct) {
+      console.log('⚠️  No seedProduct provided for outfit generation');
+      return outfits;
+    }
+
+    console.log(`👗 Generating outfits from seed: ${seedProduct.name} (${seedProduct.category}), gender: ${gender}, products pool: ${products.length}`);
 
     const isTop = (p) => p.category === 'Tops' || p.outfitTags?.includes('top') || p.outfitTags?.includes('shirt');
     const isBottom = (p) => p.category === 'Bottoms' || p.outfitTags?.includes('bottom') || p.outfitTags?.includes('pants');
@@ -1564,7 +1656,8 @@ class GNNRecommender {
     const isAccessory = (p) => p.category === 'Accessories' || p.outfitTags?.includes('accessory');
 
     const pool = (predicate, excludeIds = new Set([seedProduct._id.toString()])) => {
-      return products.filter(p => predicate(p) && !excludeIds.has(p._id.toString()));
+      const result = products.filter(p => predicate(p) && !excludeIds.has(p._id.toString()));
+      return result;
     };
 
     const pushOutfit = (parts, namePrefix, desc) => {
@@ -1586,6 +1679,9 @@ class GNNRecommender {
           gender,
           description: desc
         });
+        console.log(`✅ Created outfit: ${namePrefix} ${outfits.length} with ${unique.length} products`);
+      } else {
+        console.log(`⚠️  Skipped outfit: only ${unique.length} products (need at least 2)`);
       }
     };
 
@@ -1594,14 +1690,30 @@ class GNNRecommender {
       const seedAsBottom = isBottom(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
 
+      console.log(`   Seed product type: Top=${seedAsTop}, Bottom=${seedAsBottom}, Shoes=${seedAsShoes}`);
+
       for (let i = 0; i < Math.min(5, k); i++) {
         const exclude = new Set([seedProduct._id.toString()]);
-        const top = seedAsTop ? seedProduct : pool(isTop, exclude)[Math.floor(Math.random() * Math.max(1, pool(isTop, exclude).length))];
-        if (top) exclude.add(top._id.toString());
-        const bottom = seedAsBottom ? seedProduct : pool(isBottom, exclude)[Math.floor(Math.random() * Math.max(1, pool(isBottom, exclude).length))];
-        if (bottom) exclude.add(bottom._id.toString());
-        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
-        pushOutfit([seedProduct, top, bottom, shoes], "Men's Outfit", 'Top + Bottom + Shoes');
+        const topPool = pool(isTop, exclude);
+        const top = seedAsTop ? seedProduct : (topPool.length > 0 ? topPool[Math.floor(Math.random() * topPool.length)] : null);
+        if (top && top._id.toString() !== seedProduct._id.toString()) exclude.add(top._id.toString());
+        
+        const bottomPool = pool(isBottom, exclude);
+        const bottom = seedAsBottom ? seedProduct : (bottomPool.length > 0 ? bottomPool[Math.floor(Math.random() * bottomPool.length)] : null);
+        if (bottom && bottom._id.toString() !== seedProduct._id.toString()) exclude.add(bottom._id.toString());
+        
+        const shoesPool = pool(isShoe, exclude);
+        const shoes = seedAsShoes ? seedProduct : (shoesPool.length > 0 ? shoesPool[Math.floor(Math.random() * shoesPool.length)] : null);
+        
+        const outfitParts = [seedProduct, top, bottom, shoes].filter(p => p !== null && p !== undefined);
+        if (outfitParts.length >= 2) {
+          pushOutfit(outfitParts, "Men's Outfit", 'Top + Bottom + Shoes');
+        } else {
+          const anyOtherProduct = products.find(p => p._id.toString() !== seedProduct._id.toString());
+          if (anyOtherProduct) {
+            pushOutfit([seedProduct, anyOtherProduct], "Men's Outfit", 'Basic Outfit');
+          }
+        }
       }
     }
 
@@ -1609,15 +1721,76 @@ class GNNRecommender {
       const seedAsDress = isDress(seedProduct);
       const seedAsAcc = isAccessory(seedProduct);
       const seedAsShoes = isShoe(seedProduct);
+      const seedAsTop = isTop(seedProduct);
+      const seedAsBottom = isBottom(seedProduct);
 
-      for (let i = 0; i < Math.min(5, k); i++) {
-        const exclude = new Set([seedProduct._id.toString()]);
-        const dress = seedAsDress ? seedProduct : pool(isDress, exclude)[Math.floor(Math.random() * Math.max(1, pool(isDress, exclude).length))];
-        if (dress) exclude.add(dress._id.toString());
-        const acc = seedAsAcc ? seedProduct : pool(isAccessory, exclude)[Math.floor(Math.random() * Math.max(1, pool(isAccessory, exclude).length))];
-        if (acc) exclude.add(acc._id.toString());
-        const shoes = seedAsShoes ? seedProduct : pool(isShoe, exclude)[Math.floor(Math.random() * Math.max(1, pool(isShoe, exclude).length))];
-        pushOutfit([seedProduct, dress, acc, shoes], "Women's Outfit", 'Dress + Accessories + Shoes');
+      console.log(`   Seed product type: Dress=${seedAsDress}, Top=${seedAsTop}, Bottom=${seedAsBottom}, Accessory=${seedAsAcc}, Shoes=${seedAsShoes}`);
+
+      if (seedAsTop || seedAsBottom) {
+        console.log(`   Creating Top+Bottom+Shoes outfits for female`);
+        for (let i = 0; i < Math.min(5, k); i++) {
+          const exclude = new Set([seedProduct._id.toString()]);
+          const topPool = pool(isTop, exclude);
+          const top = seedAsTop ? seedProduct : (topPool.length > 0 ? topPool[Math.floor(Math.random() * topPool.length)] : null);
+          if (top && top._id.toString() !== seedProduct._id.toString()) exclude.add(top._id.toString());
+          
+          const bottomPool = pool(isBottom, exclude);
+          const bottom = seedAsBottom ? seedProduct : (bottomPool.length > 0 ? bottomPool[Math.floor(Math.random() * bottomPool.length)] : null);
+          if (bottom && bottom._id.toString() !== seedProduct._id.toString()) exclude.add(bottom._id.toString());
+          
+          const shoesPool = pool(isShoe, exclude);
+          const shoes = seedAsShoes ? seedProduct : (shoesPool.length > 0 ? shoesPool[Math.floor(Math.random() * shoesPool.length)] : null);
+          
+          const outfitParts = [seedProduct, top, bottom, shoes].filter(p => p !== null && p !== undefined);
+          if (outfitParts.length >= 2) {
+            pushOutfit(outfitParts, "Women's Outfit", 'Top + Bottom + Shoes');
+          } else {
+            const anyOtherProduct = products.find(p => p._id.toString() !== seedProduct._id.toString());
+            if (anyOtherProduct) {
+              pushOutfit([seedProduct, anyOtherProduct], "Women's Outfit", 'Basic Outfit');
+              break; // Chỉ tạo một fallback outfit
+            }
+          }
+        }
+      }
+
+      const dressPool = pool(isDress, new Set([seedProduct._id.toString()]));
+      console.log(`   Dress pool size: ${dressPool.length}, seedAsDress: ${seedAsDress}`);
+      if (dressPool.length > 0 || seedAsDress) {
+        console.log(`   Creating Dress+Accessories+Shoes outfits`);
+        for (let i = 0; i < Math.min(5, k); i++) {
+          const exclude = new Set([seedProduct._id.toString()]);
+          const dress = seedAsDress ? seedProduct : (dressPool.length > 0 ? dressPool[Math.floor(Math.random() * dressPool.length)] : null);
+          if (dress && dress._id.toString() !== seedProduct._id.toString()) exclude.add(dress._id.toString());
+          
+          const accPool = pool(isAccessory, exclude);
+          const acc = seedAsAcc ? seedProduct : (accPool.length > 0 ? accPool[Math.floor(Math.random() * accPool.length)] : null);
+          if (acc && acc._id.toString() !== seedProduct._id.toString()) exclude.add(acc._id.toString());
+          
+          const shoesPool = pool(isShoe, exclude);
+          const shoes = seedAsShoes ? seedProduct : (shoesPool.length > 0 ? shoesPool[Math.floor(Math.random() * shoesPool.length)] : null);
+          
+          const outfitParts = [dress || seedProduct, acc, shoes].filter(p => p !== null && p !== undefined);
+          if (outfitParts.length >= 2) {
+            pushOutfit(outfitParts, "Women's Outfit", 'Dress + Accessories + Shoes');
+          } else {
+            const anyOtherProduct = products.find(p => p._id.toString() !== seedProduct._id.toString());
+            if (anyOtherProduct) {
+              pushOutfit([seedProduct, anyOtherProduct], "Women's Outfit", 'Basic Outfit');
+              break; // Chỉ tạo một fallback outfit
+            }
+          }
+        }
+      }
+
+      if (outfits.length === 0) {
+        console.log(`   ⚠️  No outfits created, creating fallback outfit`);
+        const anyOtherProduct = products.find(p => p._id.toString() !== seedProduct._id.toString());
+        if (anyOtherProduct) {
+          pushOutfit([seedProduct, anyOtherProduct], "Women's Outfit", 'Basic Outfit');
+        } else {
+          console.log(`   ❌ Cannot create outfit: no other products in pool`);
+        }
       }
     }
 
@@ -1627,6 +1800,7 @@ class GNNRecommender {
       const key = o.products.map(p => p._id.toString()).sort().join('|');
       if (!seenKeys.has(key)) { seenKeys.add(key); deduped.push(o); }
     }
+    console.log(`✅ Generated ${outfits.length} outfits, ${deduped.length} unique, returning ${Math.min(deduped.length, k)}`);
     return deduped.slice(0, k);
   }
 

@@ -38,7 +38,6 @@ const getCategoryCounts = asyncHandler(async (req, res) => {
     });
   }
   
-  // Apply pagination to results
   const totalCount = categoryCounts.length;
   const paginatedCounts = categoryCounts.slice(
     perPage * (page - 1), 

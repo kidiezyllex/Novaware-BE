@@ -4,7 +4,6 @@ const { TfIdf } = pkg;
 import User from '../models/userModel.js';
 import Product from '../models/productModel.js';
 
-
 const MAX_USERS = 2000;
 const MAX_PRODUCTS = 5000;
 const BATCH_SIZE = 100;
@@ -42,6 +41,20 @@ class HybridRecommender {
     }
     if (user.gender === 'female') {
       return this.containsGenderKeywords(product, MALE_KWS);
+    }
+    return false;
+  }
+
+  containsChildKeywords(product) {
+    const name = (product?.name || '').toLowerCase();
+    const CHILD_KWS = ['kid', 'kids', "kid's", "kids'", 'baby', 'babies', "baby's", "babies'", 'toddler', 'toddlers', "toddler's", "toddlers'", 'infant', 'infants', "infant's", "infants'", 'child', 'children', "child's", "children's", 'junior', 'juniors', "junior's", "juniors'", 'youth', 'youths', "youth's", "youths'"];
+    return CHILD_KWS.some(k => name.includes(k));
+  }
+
+  violatesAgeRestriction(user, product) {
+    if (!user || !user.age) return false;
+    if (user.age > 12) {
+      return this.containsChildKeywords(product);
     }
     return false;
   }
@@ -714,7 +727,9 @@ class HybridRecommender {
       .sort({ rating: -1 })
       .setOptions({ allowDiskUse: true });
     
-    let filteredPersonalized = personalizedProducts.filter(p => !this.violatesGenderKeywords(user, p));
+    let filteredPersonalized = personalizedProducts.filter(p => 
+      !this.violatesGenderKeywords(user, p) && !this.violatesAgeRestriction(user, p)
+    );
 
     if (filteredPersonalized.length < k) {
       const popularProducts = await Product.find({ _id: { $nin: filteredPersonalized.map(p => p._id) } })
@@ -722,7 +737,9 @@ class HybridRecommender {
         .sort({ rating: -1, numReviews: -1 })
         .limit(Math.min(k - personalizedProducts.length, 100))
         .setOptions({ allowDiskUse: true });
-      const filteredPopular = popularProducts.filter(p => !this.violatesGenderKeywords(user, p));
+      const filteredPopular = popularProducts.filter(p => 
+        !this.violatesGenderKeywords(user, p) && !this.violatesAgeRestriction(user, p)
+      );
       filteredPersonalized.push(...filteredPopular);
     }
     
@@ -988,15 +1005,37 @@ class HybridRecommender {
       const { productId } = opts || {};
       if (productId && Array.isArray(result.products) && result.products.length > 0) {
         try {
-          const seed = await Product.findById(productId).select('_id category').lean();
+          const seed = await Product.findById(productId).select('_id category brand').lean();
           if (seed) {
+            const filteredProducts = result.products.filter(p => {
+              if (!p) return false;
+              const hasSameCategory = p.category === seed.category;
+              const hasSameBrand = p.brand === seed.brand;
+              return hasSameCategory || hasSameBrand;
+            });
+            
+            // Thêm filter theo age restriction
+            const user = await User.findById(userId).select('age').lean();
+            const ageFilteredProducts = user && user.age > 12
+              ? filteredProducts.filter(p => !this.containsChildKeywords(p))
+              : filteredProducts;
+            
             const sameCategory = [];
+            const sameBrand = [];
             const others = [];
-            for (const p of result.products) {
-              if (p && p.category === seed.category) sameCategory.push(p); else others.push(p);
+            
+            for (const p of ageFilteredProducts) {
+              if (p.category === seed.category) {
+                sameCategory.push(p);
+              } else if (p.brand === seed.brand) {
+                sameBrand.push(p);
+              } else {
+                others.push(p);
+              }
             }
-            result.products = [...sameCategory, ...others].slice(0, k);
-            result.explanation = `${result.explanation || ''}${result.explanation ? '. ' : ''}Ưu tiên sản phẩm cùng danh mục với sản phẩm đang xem`;
+            
+            result.products = [...sameCategory, ...sameBrand, ...others].slice(0, k);
+            result.explanation = `${result.explanation || ''}${result.explanation ? '. ' : ''}Chỉ hiển thị sản phẩm cùng danh mục hoặc cùng thương hiệu với sản phẩm đang xem`;
           }
         } catch (_) { }
       }
@@ -1020,17 +1059,63 @@ class HybridRecommender {
           : new Set(['Tops', 'Bottoms', 'Accessories', 'Shoes']);
       }
       
-      const query = genderAllow ? { category: { $in: Array.from(genderAllow) } } : {};
+      const { productId } = opts || {};
+      let categoryBrandFilter = null;
+      if (productId) {
+        try {
+          const seedProduct = await Product.findById(productId).select('_id category brand').lean();
+          if (seedProduct) {
+            const categoryCondition = { category: seedProduct.category };
+            const brandCondition = { brand: seedProduct.brand };
+            categoryBrandFilter = { $or: [categoryCondition, brandCondition] };
+          }
+        } catch (_) {}
+      }
+      
+      const query = {};
+      
+      if (genderAllow && categoryBrandFilter) {
+        const seedCategory = categoryBrandFilter.$or[0].category;
+        const seedBrand = categoryBrandFilter.$or[1].brand;
+        const allowedCategories = Array.from(genderAllow);
+        
+        const orConditions = [];
+        if (allowedCategories.includes(seedCategory)) {
+          orConditions.push({ category: seedCategory });
+        }
+        orConditions.push({ brand: seedBrand });
+        
+        query.$or = orConditions;
+      } else if (genderAllow) {
+        query.category = { $in: Array.from(genderAllow) };
+      } else if (categoryBrandFilter) {
+        Object.assign(query, categoryBrandFilter);
+      }
+      
+      const andConditions = [];
+      
       if (user && user.gender) {
         const femaleRegex = /(female|woman|women|ladies|girl|girls|she|her)/i;
         const maleRegex = /(male|man|men|gentleman|gents|boy|boys|he|him|his)/i;
-        const exclusion = user.gender === 'male'
-          ? { $and: [ { name: { $not: femaleRegex } }, { description: { $not: femaleRegex } } ] }
-          : user.gender === 'female'
-            ? { $and: [ { name: { $not: maleRegex } }, { description: { $not: maleRegex } } ] }
-            : {};
-        Object.assign(query, exclusion);
+        if (user.gender === 'male') {
+          andConditions.push({ name: { $not: femaleRegex } });
+          andConditions.push({ description: { $not: femaleRegex } });
+        } else if (user.gender === 'female') {
+          andConditions.push({ name: { $not: maleRegex } });
+          andConditions.push({ description: { $not: maleRegex } });
+        }
       }
+      
+      // Thêm filter loại bỏ sản phẩm trẻ em nếu user.age > 12
+      if (user && user.age > 12) {
+        const childRegex = /(kid|kids|kid's|kids'|baby|babies|baby's|babies'|toddler|toddlers|toddler's|toddlers'|infant|infants|infant's|infants'|child|children|child's|children's|junior|juniors|junior's|juniors'|youth|youths|youth's|youths')/i;
+        andConditions.push({ name: { $not: childRegex } });
+      }
+      
+      if (andConditions.length > 0) {
+        query.$and = andConditions;
+      }
+      
       const products = await Product.find(query)
         .select('_id name description images price category brand outfitTags colors featureVector')
         .sort({ rating: -1 })
@@ -1039,8 +1124,8 @@ class HybridRecommender {
         .lean();
       
       const coldExplanation = user 
-        ? `Dựa trên ${user.gender ? `giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}` : ''} ${user.age ? `độ tuổi ${user.age}` : ''}. Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác`
-        : 'Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác';
+        ? `Dựa trên ${user.gender ? `giới tính ${user.gender === 'male' ? 'nam' : 'nữ'}` : ''} ${user.age ? `độ tuổi ${user.age}` : ''}. Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác${productId ? ' (chỉ hiển thị sản phẩm cùng danh mục hoặc cùng thương hiệu)' : ''}`
+        : `Sử dụng sản phẩm phổ biến nhất do chưa có lịch sử tương tác${productId ? ' (chỉ hiển thị sản phẩm cùng danh mục hoặc cùng thương hiệu)' : ''}`;
       
       return { 
         products, 
@@ -1126,6 +1211,7 @@ class HybridRecommender {
     
     const scoredProducts = [];
     for (const product of personalizedProducts) {
+      if (this.violatesAgeRestriction(user, product)) continue;
       const itemIndex = this.itemIndexMap.get(product._id.toString());
       if (itemIndex === undefined) continue;
       

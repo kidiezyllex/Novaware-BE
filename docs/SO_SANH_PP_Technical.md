@@ -82,7 +82,12 @@ npm run dev
 - Mục tiêu: gợi ý cá nhân hóa và gợi ý phối đồ (Outfit) cho thương mại điện tử thời trang (Fashion).
 - Personallize: dựa trên lịch sử tương tác (xem/thích/giỏ hàng/đặt/đánh giá) và độ tương đồng nội dung, đề xuất sản phẩm có khả năng quan tâm cao.
 - Out Fit: xoay quanh một sản phẩm tạo phối đồ (cùng danh mục/nhãn hiệu/thẻ, vector nội dung tương đồng), hình thành gợi ý Outfit.
-- Công nghệ: Node.js + Express.js + MongoDB; khối gợi ý gồm GNN (TensorFlow.js) và Hybrid (Content-based + Collaborative Filtering, dùng natural, ml-matrix).
+- Công nghệ: Node.js + Express.js + MongoDB
+- Các mô hình gợi ý:  
++ GNN: Sử dụng TensorFlow.js
++ Hybrid (Content-based + Collaborative Filtering): Sử dụng natural, ml-matrix
++ Content-based Filtering: Sử dụng natural, content-based-recommender, ml-matrix
+
 
 ---
 
@@ -219,6 +224,247 @@ Ma trận cosine = cosine(vec_i, vec_j) cho mọi i,j hoặc theo ứng viên r�
 Top-K lân cận = sort(cosine[i]) giảm dần, lấy K phần tử đầu
 ```
 
+### 5.3 Content-based Filtering (CF)
+
+- **Nguyên lý hoạt động:**
+  - Phân tích đặc trưng nội dung của sản phẩm (category, brand, price, rating, outfitTags, colors, sale)
+  - Xây dựng user profile từ lịch sử tương tác, trích xuất sở thích về đặc trưng sản phẩm
+  - Đề xuất sản phẩm có đặc trưng tương đồng với sở thích của người dùng
+
+- **Trích xuất đặc trưng sản phẩm:**
+  - **Category**: One-hot encoding cho 6 danh mục chính: `['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories', 'other']`
+  - **Brand**: Hash function để chuyển brand thành giá trị số (normalized 0-1)
+  - **Price**: Chuẩn hóa về [0, 1] với giả định giá tối đa 1,000,000
+  - **Rating**: Chuẩn hóa về [0, 1] (rating / 5)
+  - **Outfit Tags**: Số lượng tags (normalized: min(1, count / 10))
+  - **Colors**: Số lượng màu sắc (normalized: min(1, count / 5))
+  - **Sale**: Binary (1 nếu có sale, 0 nếu không) + phần trăm sale (normalized: min(1, salePercent / 100))
+  - **Feature Vector**: Vector 13 chiều kết hợp tất cả các đặc trưng trên
+
+- **Xây dựng User Profile:**
+  - Phân tích lịch sử tương tác của người dùng với trọng số:
+    - `view`: 1
+    - `like`: 2
+    - `cart`: 3
+    - `purchase`: 5
+    - `review`: 4
+  - Tính toán sở thích:
+    - **Preferred Category**: Danh mục có tổng trọng số cao nhất
+    - **Preferred Brand**: Thương hiệu có tổng trọng số cao nhất
+    - **Average Price**: Giá trung bình có trọng số từ các sản phẩm đã tương tác
+    - **Average Rating**: Đánh giá trung bình có trọng số
+    - **Preferred Outfit Tags**: Tập hợp các outfit tags từ sản phẩm đã tương tác
+    - **Preferred Colors**: Tập hợp các màu sắc từ sản phẩm đã tương tác
+  - **User Feature Vector**: Xây dựng vector đặc trưng tương tự sản phẩm dựa trên sở thích trung bình
+
+- **Tính toán điểm tương đồng:**
+  - **Category Match**: +0.3 nếu category khớp với preferred category
+  - **Brand Match**: +0.2 nếu brand khớp với preferred brand
+  - **Feature Vector Similarity**: Cosine similarity giữa product vector và user profile vector (trọng số 0.4)
+  - **Outfit Tags Overlap**: +0.1 (tối đa) dựa trên số tags chung
+  - **Colors Overlap**: +0.1 (tối đa) dựa trên số màu chung
+  - **Final Score**: Tổng hợp tất cả các thành phần, giới hạn trong [0, 1]
+
+- **Quy trình huấn luyện:**
+  - **buildProductFeatures()**: Quét tất cả sản phẩm, trích xuất và vector hóa đặc trưng
+  - **buildUserProfiles()**: Quét người dùng có lịch sử, xây dựng user profile
+  - **trainIncremental()**: Huấn luyện tăng dần, tái sử dụng features/profiles đã có, chỉ cập nhật phần mới
+  - Lưu model vào `models/cf_model.json` và features vào `models/cf_features.json`
+
+- **Dự đoán và đề xuất:**
+  - **Personalize**: Tính điểm tương đồng giữa user profile và tất cả sản phẩm, kết hợp với seed product (nếu có) để bias kết quả
+  - **Outfit-perfect**: Từ seed product, tìm sản phẩm tương đồng về đặc trưng, lọc theo gender/category, tạo outfit combinations
+
+API trực quan hóa và dữ liệu:
+- Feature vectors mẫu: `GET /api/report/cf/features-sample?limit=20` (trả `productFeatures`, `userProfiles`, `featureVectorDimensions`)
+- User profile mẫu: `GET /api/report/cf/user-profile-sample?userId=<id>` (trả `preferredCategory`, `preferredBrand`, `avgPrice`, `avgRating`, `preferredOutfitTags`, `preferredColors`, `featureVector`)
+- Similarity matrix: `GET /api/report/cf/similarity-matrix?productIds=<id1,id2,id3>&limit=10` (trả ma trận cosine similarity giữa các sản phẩm)
+- Huấn luyện tăng dần: `POST /api/recommend/train/cf-incremental` (ghi thời gian và số lượng features/profiles vào log)
+
+Gợi ý ảnh/biểu đồ:
+- **Bảng đặc trưng sản phẩm mẫu**: Hiển thị category, brand, price, rating, tags, colors của vài sản phẩm
+- **Bảng user profile mẫu**: Hiển thị preferred category, brand, avgPrice, avgRating, tags, colors của vài người dùng
+- **Ma trận cosine similarity**: Heatmap thể hiện độ tương đồng giữa các sản phẩm (dựa trên feature vectors)
+- **Biểu đồ phân bố đặc trưng**: Histogram category, brand, price range, rating distribution
+- **Bảng so sánh feature vector**: Hiển thị vài chiều đầu của feature vector cho sản phẩm và user profile
+- **Bảng top-k recommendations**: Sản phẩm được đề xuất với điểm số và lý do (category match, brand match, similarity score)
+- **Sơ đồ quy trình**: User interaction history → User Profile → Feature Matching → Recommendations
+
+Công thức/tính toán chính:
+- **Feature Vector Construction**:
+  ```
+  vector = [
+    one_hot(category, ['Tops', 'Bottoms', 'Dresses', 'Shoes', 'Accessories', 'other']),  // 6 dims
+    hash(brand) % 100 / 100,                                                              // 1 dim
+    min(1, price / 1000000),                                                              // 1 dim
+    rating / 5,                                                                          // 1 dim
+    min(1, outfitTags.length / 10),                                                      // 1 dim
+    min(1, colors.length / 5),                                                           // 1 dim
+    hasSale ? 1 : 0,                                                                     // 1 dim
+    min(1, salePercent / 100)                                                            // 1 dim
+  ]  // Total: 13 dimensions
+  ```
+
+- **User Profile Construction**:
+  ```
+  preferredCategory = argmax_c(Σ(weight_i * I(category_i == c)))
+  preferredBrand = argmax_b(Σ(weight_i * I(brand_i == b)))
+  avgPrice = Σ(weight_i * price_i) / Σ(weight_i)
+  avgRating = Σ(weight_i * rating_i) / Σ(weight_i)
+  preferredOutfitTags = ∪(outfitTags_i)
+  preferredColors = ∪(colors_i)
+  ```
+
+- **Content Score Calculation**:
+  ```
+  score = 0
+  if (product.category == userProfile.preferredCategory):
+    score += 0.3
+  if (product.brand == userProfile.preferredBrand):
+    score += 0.2
+  score += cosineSimilarity(product.vector, userProfile.vector) * 0.4
+  score += min(0.1, overlap(outfitTags, preferredOutfitTags) / 10)
+  score += min(0.1, overlap(colors, preferredColors) / 5)
+  return min(1.0, score)
+  ```
+
+- **Cosine Similarity**:
+  ```
+  cosineSimilarity(vecA, vecB) = dot(vecA, vecB) / (||vecA|| * ||vecB||)
+  dot(vecA, vecB) = Σ(vecA[i] * vecB[i])
+  ||vec|| = sqrt(Σ(vec[i]²))
+  ```
+
+- **Personalized Score (với seed product)**:
+  ```
+  baseScore = contentScore(product, userProfile)
+  if (seedProduct exists):
+    similarity = cosineSimilarity(seedProduct.vector, product.vector)
+    baseScore = 0.6 * baseScore + 0.4 * similarity
+    if (product.category == seedProduct.category):
+      baseScore *= 1.3
+    if (product.brand == seedProduct.brand):
+      baseScore *= 1.2
+  personalizedScore = baseScore * genderFactor * historyFactor * preferenceFactor
+  ```
+
+Pseudo-code Content-based Filtering (chi tiết):
+
+```text
+// 1. Xây dựng Product Features
+For each product in products:
+  features = {
+    category: product.category,
+    brand: product.brand,
+    price: product.price,
+    rating: product.rating,
+    outfitTags: product.outfitTags,
+    colors: product.colors,
+    hasSale: product.sale > 0,
+    salePercent: product.sale
+  }
+  vector = buildFeatureVector(features)
+  productFeatures[productId] = { features, vector }
+
+// 2. Xây dựng User Profiles
+For each user in users:
+  if (user.interactionHistory.length == 0): continue
+  
+  categoryWeights = Map()
+  brandWeights = Map()
+  priceSum = { total: 0, count: 0 }
+  ratingSum = { total: 0, count: 0 }
+  outfitTagsSet = Set()
+  colorsSet = Set()
+  totalWeight = 0
+  
+  For each interaction in user.interactionHistory:
+    product = getProduct(interaction.productId)
+    weight = interactionWeights[interaction.interactionType]
+    totalWeight += weight
+    
+    categoryWeights[product.category] += weight
+    brandWeights[product.brand] += weight
+    priceSum.total += product.price * weight
+    priceSum.count += weight
+    ratingSum.total += product.rating * weight
+    ratingSum.count += weight
+    outfitTagsSet.addAll(product.outfitTags)
+    colorsSet.addAll(product.colors)
+  
+  preferredCategory = argmax(categoryWeights)
+  preferredBrand = argmax(brandWeights)
+  avgPrice = priceSum.total / priceSum.count
+  avgRating = ratingSum.total / ratingSum.count
+  
+  userProfile = {
+    preferredCategory,
+    preferredBrand,
+    avgPrice,
+    avgRating,
+    preferredOutfitTags: Array.from(outfitTagsSet),
+    preferredColors: Array.from(colorsSet),
+    featureVector: buildFeatureVector({
+      category: preferredCategory,
+      brand: preferredBrand,
+      price: avgPrice,
+      rating: avgRating,
+      outfitTags: Array.from(outfitTagsSet),
+      colors: Array.from(colorsSet),
+      hasSale: false,
+      salePercent: 0
+    })
+  }
+  userProfiles[userId] = userProfile
+
+// 3. Đề xuất sản phẩm (Personalize)
+For each product in allProducts:
+  if (product == seedProduct): continue
+  
+  baseScore = calculateContentScore(product, userProfile)
+  
+  if (seedProduct exists):
+    similarity = cosineSimilarity(seedProduct.vector, product.vector)
+    baseScore = 0.6 * baseScore + 0.4 * similarity
+    if (product.category == seedProduct.category):
+      baseScore *= 1.3
+    if (product.brand == seedProduct.brand):
+      baseScore *= 1.2
+  
+  personalizedScore = applyPersonalizationFactors(baseScore, user, historyAnalysis)
+  scoredProducts.push({ product, score: personalizedScore })
+  
+Sort scoredProducts by score descending
+Return top K products
+
+// 4. Đề xuất Outfit
+seedFeatures = productFeatures[seedProductId]
+For each product in allProducts:
+  if (product == seedProduct): continue
+  
+  productFeatures = productFeatures[productId]
+  baseScore = calculateContentScore(product, userProfile)
+  similarity = cosineSimilarity(seedFeatures.vector, productFeatures.vector)
+  score = 0.5 * baseScore + 0.5 * similarity
+  
+  Filter by gender and category
+  Rank products by score
+  
+Generate outfit combinations from top ranked products
+Return top K outfits
+```
+
+Ưu điểm của Content-based Filtering:
+- **Không cần dữ liệu người dùng khác**: Hoạt động độc lập, không bị ảnh hưởng bởi cold-start problem của collaborative filtering
+- **Giải thích được**: Có thể giải thích tại sao đề xuất sản phẩm (category match, brand match, similarity score)
+- **Phù hợp với niche items**: Đề xuất tốt cho các sản phẩm ít người dùng tương tác
+- **Cá nhân hóa dựa trên sở thích thực tế**: Phân tích lịch sử tương tác để hiểu sở thích người dùng
+
+Hạn chế:
+- **Over-specialization**: Có thể chỉ đề xuất sản phẩm tương tự, thiếu đa dạng
+- **Phụ thuộc vào metadata**: Cần metadata sản phẩm đầy đủ và chất lượng
+- **Không học được sở thích ẩn**: Chỉ dựa trên đặc trưng có thể quan sát được
+
 ---
 
 ## 6. Đánh giá mô hình
@@ -325,9 +571,16 @@ Ghi chú:
 ## 7. Tích hợp vào website
 
 - API backend:
-  - Gợi ý cá nhân hóa (GNN): `GET /api/recommend/gnn/personalize/:userId?k=9`
-  - Gợi ý hỗn hợp (Hybrid): `GET /api/recommend/hybrid/:userId?k=9&pageNumber=1&perPage=9`
-  - Gợi ý Outfit (GNN): `GET /api/recommend/gnn/outfit-perfect/:userId?productId=<id>&k=9`
+  - Gợi ý cá nhân hóa (GNN): `GET /api/recommend/gnn/personalize/:userId?productId=<id>&k=9`
+  - Gợi ý cá nhân hóa (Hybrid): `GET /api/recommend/hybrid/personalize/:userId?productId=<id>&k=9`
+  - Gợi ý cá nhân hóa (Content-based): `GET /api/recommend/cf/personalize/:userId?productId=<id>&k=9`
+  - Gợi ý Outfit (GNN): `GET /api/recommend/gnn/outfit-perfect/:userId?productId=<id>&k=9&gender=male`
+  - Gợi ý Outfit (Hybrid): `GET /api/recommend/hybrid/outfit-perfect/:userId?productId=<id>&k=9`
+  - Gợi ý Outfit (Content-based): `GET /api/recommend/cf/outfit-perfect/:userId?productId=<id>&k=9&gender=male`
+  - Huấn luyện GNN: `POST /api/recommend/train/gnn-incremental`
+  - Huấn luyện Hybrid: `POST /api/recommend/train/hybrid-incremental`
+  - Huấn luyện Content-based: `POST /api/recommend/train/cf-incremental`
+  - Huấn luyện tất cả: `POST /api/recommend/train/all`
   - Huấn luyện (minh họa): `POST /api/report/models/train`
 
 - Hiển thị frontend:
@@ -335,7 +588,11 @@ Ghi chú:
   - Có thể dùng `topk` làm “sản phẩm tương tự”
 
 - Sơ đồ kiến trúc (gợi ý ảnh):
-  - Browser (frontend) → Express API → Dịch vụ gợi ý (GNN/Hybrid) → MongoDB
+  - Browser (frontend) → Express API → Dịch vụ gợi ý (GNN/Hybrid/Content-based) → MongoDB
+  - Dịch vụ gợi ý:
+    - GNN Recommender: Xử lý đồ thị, embedding, TensorFlow.js
+    - Hybrid Recommender: Kết hợp Content-based (TF-IDF) + Collaborative Filtering (ml-matrix)
+    - Content-based Recommender: Phân tích đặc trưng sản phẩm, user profile, cosine similarity
   - Trang báo cáo tĩnh nằm tại `public/report/` (route `/report`)
 
 ---
@@ -344,10 +601,20 @@ Ghi chú:
 
 - Về Precision/F1: mô hình kết hợp (như SVD+CB, UserCF+CB) đạt ~0.99, tỉ lệ trúng cao
 - Về MAPE/RMSE: mô hình kết hợp giảm sai số đáng kể (MAPE < 4%)
-- Về cá nhân hóa: GNN phù hợp với quan hệ phức tạp và cold-start; Hybrid có tính giải thích và dễ điều chỉnh
-- Về thời gian huấn luyện: ItemCF nhanh; Full Hybrid và SVD+CB cân bằng giữa độ chính xác và thời gian
+- Về cá nhân hóa: GNN phù hợp với quan hệ phức tạp và cold-start; Hybrid có tính giải thích và dễ điều chỉnh; Content-based Filtering giải thích rõ ràng và không cần dữ liệu người dùng khác
+- Về thời gian huấn luyện: ItemCF nhanh; Full Hybrid và SVD+CB cân bằng giữa độ chính xác và thời gian; Content-based Filtering có thời gian huấn luyện trung bình, phù hợp với incremental training
 
-Khuyến nghị: Nếu ưu tiên độ chính xác, chọn “kết hợp (SVD+CB hoặc UserCF+CB)”; nếu coi trọng giải thích và mở rộng, dùng Full Hybrid; nếu cần thời gian thực/học trực tuyến, dùng GNN tăng cường cá nhân hóa và Outfit.
+**So sánh Content-based Filtering với các mô hình khác:**
+- **Ưu điểm so với Collaborative Filtering**: Không bị cold-start problem, hoạt động độc lập cho từng người dùng, giải thích được lý do đề xuất
+- **Ưu điểm so với GNN**: Đơn giản hơn, không cần xây dựng đồ thị phức tạp, dễ debug và maintain
+- **Ưu điểm so với Hybrid**: Tập trung vào đặc trưng nội dung, phù hợp khi metadata sản phẩm đầy đủ
+- **Nhược điểm**: Có thể over-specialize, thiếu đa dạng trong đề xuất, phụ thuộc vào chất lượng metadata
+
+Khuyến nghị: 
+- Nếu ưu tiên độ chính xác: chọn "kết hợp (SVD+CB hoặc UserCF+CB)"
+- Nếu coi trọng giải thích và mở rộng: dùng Full Hybrid hoặc Content-based Filtering
+- Nếu cần thời gian thực/học trực tuyến: dùng GNN tăng cường cá nhân hóa và Outfit
+- Nếu cần giải thích rõ ràng và không phụ thuộc vào dữ liệu người dùng khác: dùng Content-based Filtering
 
 ---
 
@@ -378,9 +645,12 @@ npm start
 
 3) Huấn luyện và trực quan hóa
 - Kích hoạt huấn luyện (minh họa): `POST /api/report/models/train`
-- Chỉ số huấn luyện: `/api/report/gnn/training-metrics`
+- Chỉ số huấn luyện GNN: `/api/report/gnn/training-metrics`
 - Embedding GNN: `/api/report/gnn/embeddings-sample?limit=20`
-- TF-IDF/độ tương đồng: `/api/report/hybrid/tfidf-sample?limit=20&k=5`
+- TF-IDF/độ tương đồng Hybrid: `/api/report/hybrid/tfidf-sample?limit=20&k=5`
+- Feature vectors Content-based: `/api/report/cf/features-sample?limit=20`
+- User profile Content-based: `/api/report/cf/user-profile-sample?userId=<id>`
+- Similarity matrix Content-based: `/api/report/cf/similarity-matrix?productIds=<id1,id2,id3>&limit=10`
 - So sánh dự đoán: `/api/report/predictions/sample?userId=<id>&k=10`
 
 4) Đánh giá và so sánh

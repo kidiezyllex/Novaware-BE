@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const RECOMMENDATION_API = "http://localhost:8000/api/recommend"; // Django endpoint
+const RECOMMENDATION_API = "http://localhost:8000/api/recommend"; 
 
 export const getRecommendations = async (userId) => {
   try {
